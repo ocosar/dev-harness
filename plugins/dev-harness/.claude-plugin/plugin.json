@@ -1,0 +1,8 @@
+{
+  "name": "dev-harness",
+  "version": "0.1.0",
+  "description": "Spec → build → test → review loop for a non-coding owner. Three human gates enforced by hooks: (1) spec approval, (2) every paid external API call (+ daily USD cap), (3) merge to main.",
+  "author": { "name": "Ozan Coşar" },
+  "license": "MIT",
+  "keywords": ["harness", "spec-driven", "approval-gates", "budget", "tdd"]
+}

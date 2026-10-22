@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "language": "tr",
+  "paid": {
+    "daily_cap_usd": 10,
+    "bash_patterns": [
+      "\\bcurl\\b[^\\n]*\\b(queue\\.)?fal\\.run\\b",
+      "\\bcurl\\b[^\\n]*\\bapi\\.(openai|replicate|runwayml|lumalabs)\\.(com|ai)\\b"
+    ],
+    "mcp_tools": [
+      "mcp__fal__(run_model|submit_job|submit_jobs)"
+    ],
+    "extra_ledgers": []
+  },
+  "protected_branches": ["main", "master"],
+  "check": {
+    "command": "bash .harness/check.sh",
+    "timeout_s": 600,
+    "max_consecutive_blocks": 3
+  },
+  "unattended_env": "HARNESS_UNATTENDED"
+}

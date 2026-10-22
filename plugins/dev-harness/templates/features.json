@@ -1,0 +1,18 @@
+{
+  "spec": "docs/specs/<slug>/spec.md",
+  "approved": false,
+  "approved_at": null,
+  "features": [
+    {
+      "id": "F1",
+      "title": "One user-visible capability, small enough for one session",
+      "acceptance": [
+        "Concrete, checkable statement (command to run, file that must exist, number that must be met)"
+      ],
+      "paid": false,
+      "status": "todo",
+      "passes": false,
+      "evidence": ""
+    }
+  ]
+}

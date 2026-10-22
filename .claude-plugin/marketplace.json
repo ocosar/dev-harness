@@ -1,0 +1,14 @@
+{
+  "name": "ocosar-harness",
+  "owner": { "name": "Ozan Coşar" },
+  "metadata": {
+    "description": "Ozan's personal app-development harness for Claude Code: spec → build → test → review, with three human gates (spec, paid API call, merge)."
+  },
+  "plugins": [
+    {
+      "name": "dev-harness",
+      "source": "./plugins/dev-harness",
+      "description": "Spec-driven build loop with deterministic gates: spec approval, paid-call approval + daily cap, merge stays with the human."
+    }
+  ]
+}

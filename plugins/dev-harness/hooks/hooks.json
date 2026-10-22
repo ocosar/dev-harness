@@ -1,0 +1,28 @@
+{
+  "description": "dev-harness gates: paid-call + spec + merge guard (PreToolUse), test gate (Stop), state briefing (SessionStart). All hooks are no-ops in repos without .harness/config.json.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/session_context.py\"", "timeout": 20 }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit|mcp__.*",
+        "hooks": [
+          { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/gate_pretool.py\"", "timeout": 20, "onFailure": "block" }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/stop_check.py\"", "timeout": 900 }
+        ]
+      }
+    ]
+  }
+}
