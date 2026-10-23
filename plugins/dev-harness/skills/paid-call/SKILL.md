@@ -25,7 +25,7 @@ The PreToolUse hook blocks any command/tool matching the repo's paid patterns un
      "created_at": "<ISO timestamp>"
    }
    ```
-4. **Show the owner** (in their language): the summary, the review paths (they should look at the frames/prompt), estimate + source, today's spend vs cap. Then run the paid command. The hook shows them a Yes/No prompt — that click is the approval. One request = one call; a retry or variant needs a new request.
+4. **Show the owner** (configured language, default English): the summary, the review paths (they should look at the frames/prompt), estimate + source, today's spend vs cap. Then run the paid command. The hook shows them a Yes/No prompt — that click is the approval. One request = one call; a retry or variant needs a new request.
 5. **If denied or unattended:** leave the request as is, report it under "needs owner", stop.
 6. **After the call:** append one line to `.harness/ledger.jsonl`:
    `{"ts": "<ISO with timezone>", "request": "<id>", "endpoint": "...", "usd": <actual>, "usd_estimate": <est>, "billing_source": "e.g. x-fal-billable-units × unit price", "note": "..."}`

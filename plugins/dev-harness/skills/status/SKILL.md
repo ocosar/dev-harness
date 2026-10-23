@@ -11,4 +11,4 @@ Build a short status report from repo state only (no guessing):
 - Last 3 entries of `.harness/progress.md`.
 - **Needs owner:** a numbered list of decisions/approvals, or "nothing".
 
-Write it in the owner's language, under 25 lines.
+Write it in the configured language (default English), under 25 lines.

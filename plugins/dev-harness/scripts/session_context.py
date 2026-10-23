@@ -21,7 +21,9 @@ def main() -> None:
     lines = ["# dev-harness is active in this repo",
              "Gates: (1) spec approval, (2) every paid API call (request file + owner click + daily cap), "
              "(3) merge stays with the owner. Hooks enforce these; do not look for workarounds.",
-             f"Owner language: {cfg.get('language', 'en')}. Report format: what was done · commit hashes · "
+             f"Write everything new (chat replies, specs, reports, PR text, commit messages, progress.md) in "
+             f"language '{cfg.get('language', 'en')}'; leave existing docs in their own language. "
+             "Report format: what was done · commit hashes · "
              "review paths · USD spent · what you need from the owner."]
     try:
         feats = json.loads((hd / "features.json").read_text())

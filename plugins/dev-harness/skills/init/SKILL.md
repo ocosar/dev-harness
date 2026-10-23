@@ -16,7 +16,7 @@ Set up dev-harness in this repository. Templates are in `${CLAUDE_PLUGIN_ROOT}/t
    - `paid.mcp_tools`: paid MCP tools available in this environment.
    - `paid.extra_ledgers`: the repo's own spend ledger if it has one (`{"path": ..., "ts_field": ..., "usd_field": ...}`) so the daily cap counts real spend.
    - `paid.daily_cap_usd`: `$ARGUMENTS` if given, else the repo's existing CLI daily cap, else 10.
-   - `language`: the language the owner uses in CLAUDE.md / chat.
+   - `language`: `en` (default — the owner works in English). Use another language only if the owner explicitly asks. Existing non-English docs in the repo stay as they are; do not translate them.
    Writing this file triggers an approval prompt — that is expected; tell the owner what the cap and patterns are.
 
 4. **Write `.harness/check.sh`**: the repo's free, fast, deterministic test command with mocks on (e.g. `FAL_MOCK=1 python -m pytest -q -x`). Run it once; it must pass on the current main. If the full suite is slow (>3 min), use a fast subset and note the full command for /dev-harness:ship.

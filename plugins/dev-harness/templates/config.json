@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "language": "tr",
+  "language": "en",
   "paid": {
     "daily_cap_usd": 10,
     "bash_patterns": [
