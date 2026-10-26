@@ -36,7 +36,9 @@ DEFAULT_CONFIG = {
 }
 
 # Files that steer the harness itself. Changing them needs the owner (Edit/Write → ask; shell → restored).
-CONTROL_FILES = [".harness/config.json", ".harness/check.sh", ".harness/cases.json", ".harness/paid_guard.py"]
+CONTROL_FILES = [".harness/config.json", ".harness/check.sh", ".harness/cases.json", ".harness/paid_guard.py",
+                 # the harness itself when installed into the repo (install_project.py), and the settings that load it
+                 ".claude/settings.json", ".claude/dev-harness/*", ".claude/skills/dh-*", ".claude/agents/dh-*"]
 FEATURES = ".harness/features.json"
 
 

@@ -31,7 +31,20 @@ Three layers, from soft to hard:
 
 Requirements: `python3` 3.9+ (macOS's built-in one is fine), `git`, and Claude Code 2.1.295+ (for `onFailure: block`). The hooks do nothing in repos without `.harness/config.json`.
 
-## Install (once per machine / cloud environment)
+## Install
+
+### Option A — inside the repo (works everywhere, incl. Claude Code cloud sessions)
+
+Cloud sessions don't load plugins ("Plugins aren't available in this environment"). Install the harness into the repo instead; Claude Code loads `.claude/settings.json` hooks, `.claude/skills/` and `.claude/agents/` from any checkout:
+
+```
+git clone https://github.com/ocosar/dev-harness /tmp/dev-harness
+python3 /tmp/dev-harness/install_project.py .      # run at the repo root, on a branch
+```
+
+Commit the result via a PR; it is active from the next session. Commands are `/dh-init`, `/dh-spec`, `/dh-build`, `/dh-paid-call`, `/dh-experiment`, `/dh-autoloop`, `/dh-retro`, `/dh-ship`, `/dh-status`; subagents are `dh-planner`, `dh-builder`, `dh-evaluator`, `dh-reviewer`. Re-run the installer to update (idempotent; other settings are kept). The installed copy is a protected control file — changes go through this repo and a re-install PR. Don't also enable the plugin in the same repo (hooks would run twice). In the rest of this README, `/dev-harness:x` = `/dh-x` for repo installs.
+
+### Option B — plugin (local Claude Code on your machine)
 
 ```
 /plugin marketplace add ocosar/dev-harness
@@ -137,6 +150,7 @@ Every component encodes an assumption about what models can't yet do reliably; r
 
 ## Changelog
 
+- **0.3.1** (2026-10-26). `install_project.py`: install the harness into a repo's `.claude/` (no plugin system needed — cloud sessions). The installed hooks, skills, agents and `.claude/settings.json` are control files. `/dev-harness:status` reads the per-branch ledger.
 - **0.3.0** (2026-10-26). Self-review plus an independent adversarial review (20 findings).
   - Gates follow the session into child repos (cloud sessions start in the parent folder).
   - A broken config fails closed.
