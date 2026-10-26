@@ -1,11 +1,18 @@
 {
-  "description": "dev-harness gates: paid-call + spec + merge guard (PreToolUse), test gate (Stop), state briefing (SessionStart). All hooks are no-ops in repos without .harness/config.json.",
+  "description": "dev-harness: briefing (SessionStart), owner-lesson capture (UserPromptSubmit), spec/paid/merge/locked-file gates (PreToolUse), test + selftest gate (Stop). All hooks are no-ops in repos without .harness/config.json.",
   "hooks": {
     "SessionStart": [
       {
         "matcher": "startup|resume|clear|compact",
         "hooks": [
           { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/session_context.py\"", "timeout": 20 }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/capture_lesson.py\"", "timeout": 10 }
         ]
       }
     ],

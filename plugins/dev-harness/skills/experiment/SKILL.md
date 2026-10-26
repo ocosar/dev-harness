@@ -6,6 +6,8 @@ argument-hint: "<what you want to improve> [variants]"
 
 Goal: $ARGUMENTS
 
+If every run is FREE and the metric is computed by a script (no human judging), use /dev-harness:autoloop instead: it can run unattended overnight. This skill is for paid or human-judged experiments.
+
 1. **Baseline and hypothesis.** Find the current best run (experiment log — `docs/prompt-log.md` or `.harness/experiments.md`; create the latter from the columns below if neither exists). State in one line what is being improved, the metric(s) and the threshold that would count as better.
 2. **Design variants:** each changes ONE variable vs the baseline. If two changes cannot be separated, call it a "package" and say why. Max 3 variants per round. Write them as a small table: variant | variable | hypothesis | est. $ (price verified now).
 3. **Free first:** run every variant's dry-run / mock path, produce the comparison artefacts (frame strips, side-by-side, measured metrics). Catch broken variants here, not on the bill.

@@ -42,6 +42,29 @@ def main() -> None:
     if parked:
         lines.append(f"Parked paid request awaiting the owner: {parked[0].name} — {parked[1].get('summary', '')}")
     try:
+        les = [ln for ln in (hd / "lessons.md").read_text().splitlines() if ln.strip().startswith("- ")]
+        if les:
+            lines.append("\n## Lessons for this repo (.harness/lessons.md) — follow them")
+            lines += les[:30]
+    except OSError:
+        pass
+    try:
+        inbox = [ln for ln in (hd / "lessons-inbox.md").read_text().splitlines() if ln.startswith("- ")]
+        if inbox:
+            lines.append(f"\n## {len(inbox)} uncurated owner lesson(s) in .harness/lessons-inbox.md — apply them too:")
+            lines += inbox[-10:]
+    except OSError:
+        pass
+    try:
+        al = json.loads((hd / "state" / "autoloop.json").read_text())
+        if not al.get("finished"):
+            lines.append(f"\n## Autoloop ACTIVE: {al.get('run_id')} on {al.get('branch')} — best {al.get('best')} "
+                         f"(baseline {al.get('baseline')}), {al.get('runs')}/{al.get('max_runs')} runs"
+                         + (f" — HALTED: {al['halted']}" if al.get("halted") else "")
+                         + ". Continue with /dev-harness:autoloop.")
+    except (OSError, json.JSONDecodeError):
+        pass
+    try:
         prog = (hd / "progress.md").read_text().strip().splitlines()
         lines.append("\n## Latest progress (.harness/progress.md, tail)")
         lines += prog[-15:]

@@ -143,6 +143,46 @@ def emit(obj: dict) -> None:
     print(json.dumps(obj, ensure_ascii=False))
 
 
+# ---------- self-improvement: event log ----------
+EVENTS = f"{HARNESS_DIR}/events.jsonl"
+_CTX: dict = {}
+
+
+def set_event_ctx(root: Path, **kw) -> None:
+    _CTX.clear()
+    _CTX.update(root=root, **kw)
+
+
+def log_event(root: Path, kind: str, **data) -> None:
+    """Append-only, tracked log the retro skill learns from. Never raises."""
+    try:
+        rec = {"ts": _dt.datetime.now().astimezone().isoformat(timespec="seconds"), "kind": kind}
+        rec.update({k: (v if isinstance(v, (int, float, bool)) or v is None else str(v)[:400]) for k, v in data.items()})
+        p = root / EVENTS
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with p.open("a") as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
 def pretool_decision(decision: str, reason: str) -> None:
+    if _CTX.get("root"):
+        log_event(_CTX["root"], f"gate_{decision}", tool=_CTX.get("tool"), input=_CTX.get("summary"),
+                  reason=reason.splitlines()[0] if reason else "")
     emit({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": decision,
                                  "permissionDecisionReason": reason}})
+
+
+# ---------- locked paths (frozen evaluators etc.) ----------
+def locked_patterns(cfg: dict) -> list[str]:
+    pats = list(cfg.get("locked_paths") or [])
+    for prof in (cfg.get("autoloop") or {}).values():
+        pats += list(prof.get("locked") or [])
+    return [p for p in pats if p]
+
+
+def matches_any(rel: str, patterns: list[str]) -> bool:
+    """fnmatch-style; '*' also matches '/' (so 'dir/*' covers the whole subtree)."""
+    import fnmatch
+    return any(fnmatch.fnmatch(rel, p) or rel == p.rstrip("/") for p in patterns)

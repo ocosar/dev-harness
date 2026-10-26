@@ -39,8 +39,39 @@ To make every session in a project load it automatically (incl. cloud sessions),
 | `/dev-harness:experiment <goal>` | Variant tuning: one variable per run, free dry-run first, owner picks the winner |
 | `/dev-harness:ship` | Final checks, PR with evidence → **Gate 3** (you merge) |
 | `/dev-harness:status` | "Where are we?" in under 25 lines |
+| `/dev-harness:autoloop <profile>` | Overnight tuning for a **free**, script-measured goal: locked evaluator, keep/reset by the runner, report PR |
+| `/dev-harness:retro` | Self-improvement: score the period, curate lessons, propose harness PRs with regression tests |
 
 Subagents: `dev-harness:planner` (Opus), `builder` (session model), `evaluator` and `reviewer` (Sonnet, read-only, fresh context).
+
+## How the harness improves itself
+
+The harness never changes itself silently; it learns through files and PRs you merge.
+
+1. **Capture (automatic).** Every gate deny/ask, check failure and autoloop event goes to `.harness/events.jsonl`. Any line you type starting with `LESSON:` lands in `.harness/lessons-inbox.md` and applies at once.
+2. **Remember (every session).** `.harness/lessons.md` (≤ 30 curated rules) is injected into each session's briefing and checked by the planner and reviewer.
+3. **Guard against regressions.** False positives and misses become cases in `.harness/cases.json`; the Stop hook runs `selftest` so a config change can't bring them back. Harness-level fixes come with a test in `tests/`.
+4. **Retro (you trigger it, or schedule it weekly).** `/dev-harness:retro` scores the period (corrections, false-positive denies, relays, $ per feature), curates lessons, and opens PRs — including deletions of parts that caught nothing.
+5. **You merge.** No retro may widen what agents can do without you (spend, merge, approve specs, edit locked evaluators).
+
+## Autoloop (autoresearch-style)
+
+For goals where every run is free and a script computes the score. The owner adds a profile to `.harness/config.json` (that click approves goal, metric, evaluator, editable files, budget):
+
+```json
+"autoloop": { "area-accuracy": {
+  "goal": "more rooms within ±5% of the plan's area labels",
+  "eval_cmd": "python ilan-poc/tools/autoloop_eval.py --set ayar",
+  "holdout_cmd": "python ilan-poc/tools/autoloop_eval.py --set test",
+  "direction": "max", "editable": ["ilan-poc/ilanpoc/rooms.py"], "locked": ["ilan-poc/tools/autoloop_eval.py", "ilan-poc/regression/*"],
+  "time_budget_s": 300, "max_runs": 80, "max_hours": 8 } }
+```
+
+The evaluator's last stdout line is `{"score": <num>, "ok": <guards passed>, "notes": "..."}`. `scripts/autoloop.py` (not the agent) commits each attempt, verifies locked files are byte-identical (else HALT), rejects out-of-scope edits, keeps only improvements (or equal score with less code), resets the rest, logs `results.tsv`, runs the holdout once at the end and writes `docs/autoloop/<run>.md`. Overnight:
+
+```
+caffeinate -i env HARNESS_UNATTENDED=1 claude -p "/dev-harness:autoloop area-accuracy" --permission-mode acceptEdits --allowedTools "Bash,Read,Edit,Write,Grep,Glob"
+```
 
 ## Unattended runs (cloud scheduled tasks, `claude -p`)
 
@@ -52,12 +83,12 @@ Set `HARNESS_UNATTENDED=1` in the environment. Gates 1 and 2 then deny instead o
 .claude-plugin/marketplace.json      marketplace "ocosar-harness"
 plugins/dev-harness/
   .claude-plugin/plugin.json
-  hooks/hooks.json                   SessionStart briefing · PreToolUse gates · Stop test gate
+  hooks/hooks.json                   SessionStart briefing · LESSON capture · PreToolUse gates · Stop test + selftest gate
   scripts/                           stdlib-only Python hook scripts
   agents/                            planner, builder, evaluator, reviewer
-  skills/                            init, spec, build, paid-call, experiment, ship, status
-  templates/                         config.json, features.json, check.sh, progress.md, CLAUDE.md block
-tests/test_gates.py                  gate behaviour tests (python3 -m pytest -q)
+  skills/                            init, spec, build, paid-call, experiment, autoloop, retro, ship, status
+  templates/                         config.json, features.json, check.sh, progress.md, lessons.md, cases.json, CLAUDE.md block
+tests/                              gate, autoloop and learning tests (python3 -m pytest -q)
 ```
 
 ## Design references
@@ -70,5 +101,14 @@ tests/test_gates.py                  gate behaviour tests (python3 -m pytest -q)
 - obra/superpowers, mattpocock/skills — TDD, subagent-driven development, fresh-context review.
 
 Every component encodes an assumption about what models can't yet do reliably; revisit the harness when models improve and delete what is no longer needed.
+
+- karpathy/autoresearch — fixed-budget experiment loop, single editable file, read-only evaluator, keep or git-reset, results.tsv, "simpler is better".
+- Memento (Memento-Teams) — learn from stored cases instead of retraining; small, curated memory works best → `lessons.md`.
+
+## Changelog
+
+- **0.2.0** (2026-10-26) — autoloop (locked evaluator, runner-decided keep/reset, holdout, report PR); self-improvement loop (events log, `LESSON:` capture, lessons in every briefing, repo `cases.json` selftest in the Stop hook, `/dev-harness:retro`); locked paths guard.
+- **0.1.1** (2026-10-23) — English as default working language.
+- **0.1.0** (2026-10-22) — spec / paid-call / merge gates, build loop, experiment discipline.
 
 MIT licence.

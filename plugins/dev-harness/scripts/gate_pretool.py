@@ -132,8 +132,12 @@ def file_guard(root: Path, cfg: dict, payload: dict, tool: str, ti: dict) -> boo
     except ValueError:
         return False
     if rel == ".harness/config.json":
-        _ask_or_deny(cfg, payload, "Harness config change (caps, paid patterns, protected branches). "
-                                   "Only the owner changes these — approve only if you asked for it.")
+        _ask_or_deny(cfg, payload, "Harness config change (caps, paid patterns, protected branches, locked "
+                                   "evaluators, autoloop profiles). Only the owner changes these — approve only if you asked for it.")
+        return True
+    if H.matches_any(rel, H.locked_patterns(cfg)):
+        _ask_or_deny(cfg, payload, f"LOCKED FILE — {rel} is a frozen evaluator / reference. Agents may not change how "
+                                   "results are measured. Approve only if YOU want the measurement itself changed.")
         return True
     if rel == ".harness/features.json":
         new = _new_text(tool, ti)
@@ -162,6 +166,7 @@ def main() -> None:
     cfg = H.load_config(root)
     tool = payload.get("tool_name", "")
     ti = payload.get("tool_input") or {}
+    H.set_event_ctx(root, tool=tool, summary=ti.get("command") or ti.get("file_path") or str(ti)[:200])
     if tool == "Bash":
         cmd = ti.get("command", "") or ""
         reason = merge_guard(root, cfg, cmd, payload.get("cwd"))

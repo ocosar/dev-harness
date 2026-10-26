@@ -21,7 +21,7 @@ Set up dev-harness in this repository. Templates are in `${CLAUDE_PLUGIN_ROOT}/t
 
 4. **Write `.harness/check.sh`**: the repo's free, fast, deterministic test command with mocks on (e.g. `FAL_MOCK=1 python -m pytest -q -x`). Run it once; it must pass on the current main. If the full suite is slow (>3 min), use a fast subset and note the full command for /dev-harness:ship.
 
-5. **Create** `.harness/progress.md` (template), `.harness/requests/.gitkeep`, and add `.harness/state/` to `.gitignore`. Do not create features.json yet (that comes from /dev-harness:spec).
+5. **Create** `.harness/progress.md`, `.harness/lessons.md` (templates; seed lessons.md with up to 10 hard-won rules already written in the repo's CLAUDE.md/docs, each with its source), `.harness/cases.json` (template; fill it with the 3+3 commands you tested the paid regexes against, and any evaluator paths that must stay locked), `.harness/requests/.gitkeep`, and add `.harness/state/` to `.gitignore`. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/selftest.py"` — it must pass. Do not create features.json yet (that comes from /dev-harness:spec).
 
 6. **CLAUDE.md:** insert the block from `templates/CLAUDE-harness.md` (between its start/end markers; replace an existing block). Do not rewrite the repo's own rules.
 

@@ -13,4 +13,5 @@ disable-model-invocation: true
    - **Cost**: spent so far on this work (ledger), expected ongoing cost if any
    - **Risks & rollback**: one line each
    - **Owner checklist**: the 1–3 things to look at before clicking Merge
-5. Stop. Never merge, never push to main. Report in the harness format with the PR link. If deploy happens on merge (e.g. Railway from main), say so explicitly in the PR so the owner knows the merge click is also the deploy click.
+5. Suggest `/dev-harness:retro` to the owner if the last retro is older than a week or this ship had owner corrections.
+6. Stop. Never merge, never push to main. Report in the harness format with the PR link. If deploy happens on merge (e.g. Railway from main), say so explicitly in the PR so the owner knows the merge click is also the deploy click.

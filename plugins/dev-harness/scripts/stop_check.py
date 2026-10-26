@@ -39,10 +39,11 @@ def main() -> None:
     cfg = H.load_config(root)
     chk = cfg.get("check") or {}
     command = chk.get("command") or ""
-    if not command:
-        return
-    first = shlex.split(command)[-1] if command.strip() else ""
-    if first.endswith(".sh") and not (root / first).is_file():
+    last = shlex.split(command)[-1] if command.strip() else ""
+    if last.endswith(".sh") and not (root / last).is_file():
+        command = ""  # check script not set up yet
+    has_cases = (root / H.HARNESS_DIR / "cases.json").is_file()
+    if not command and not has_cases:
         return
     state_path = root / STATE
     try:
@@ -53,12 +54,18 @@ def main() -> None:
     fp = fingerprint(root)
     if state.get("last_pass_fp") == fp:
         return
-    try:
-        r = subprocess.run(command, shell=True, cwd=root, capture_output=True, text=True,
-                           timeout=int(chk.get("timeout_s", 600)))
-        ok, out = r.returncode == 0, (r.stdout + "\n" + r.stderr)
-    except subprocess.TimeoutExpired:
-        ok, out = False, f"check timed out after {chk.get('timeout_s', 600)} s"
+    ok, out = True, ""
+    if has_cases:  # repo's own gate regression cases (paid patterns etc.)
+        r = subprocess.run([sys.executable, str(Path(__file__).resolve().parent / "selftest.py")], cwd=root,
+                           capture_output=True, text=True, timeout=60)
+        ok, out = r.returncode == 0, r.stdout + r.stderr
+    if ok and command:
+        try:
+            r = subprocess.run(command, shell=True, cwd=root, capture_output=True, text=True,
+                               timeout=int(chk.get("timeout_s", 600)))
+            ok, out = r.returncode == 0, (r.stdout + "\n" + r.stderr)
+        except subprocess.TimeoutExpired:
+            ok, out = False, f"check timed out after {chk.get('timeout_s', 600)} s"
     if ok:
         state.update(last_pass_fp=fp, consecutive_blocks=0, last_result="pass")
         H.write_json(state_path, state)
@@ -67,9 +74,11 @@ def main() -> None:
     tail = "\n".join(out.strip().splitlines()[-40:])
     state.update(consecutive_blocks=n, last_result="fail", last_fail_fp=fp)
     H.write_json(state_path, state)
+    H.log_event(root, "check_fail", attempt=n, tail=out.strip().splitlines()[-1] if out.strip() else "")
     if n > int(chk.get("max_consecutive_blocks", 3)):
         state["consecutive_blocks"] = 0
         H.write_json(state_path, state)
+        H.log_event(root, "check_gave_up", attempts=n - 1)
         H.emit({"systemMessage": f"dev-harness: checks still failing after {n - 1} fix attempts — stopping. "
                                  "The failure must be in your report."})
         return
