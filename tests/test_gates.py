@@ -50,10 +50,11 @@ def bash(repo, cmd, **extra):
     return {"cwd": str(repo), "tool_name": "Bash", "tool_input": {"command": cmd}, "permission_mode": "default", **extra}
 
 
-def prepare(repo, est=3.0, rid="r1"):
+def prepare(repo, cmd="python pipeline.py --pay", est=3.0, rid="r1", age_h=0):
     p = repo / ".harness" / "requests" / f"{rid}.json"
-    p.write_text(json.dumps({"id": rid, "status": "prepared", "summary": "H3 run", "est_usd": est,
-                             "price_source": "fal pricing API"}))
+    created = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=age_h)).isoformat()
+    p.write_text(json.dumps({"id": rid, "status": "prepared", "command": cmd, "summary": "H3 run", "est_usd": est,
+                             "price_source": "fal pricing API", "created_at": created}))
     return p
 
 
@@ -70,17 +71,45 @@ def test_harmless_commands_pass(repo):
 
 def test_paid_without_request_denied(repo):
     out = run("gate_pretool.py", bash(repo, "python pipeline.py --from a --to b --pay"))
-    assert decision(out) == "deny" and "no prepared approval request" in out["hookSpecificOutput"]["permissionDecisionReason"]
+    assert decision(out) == "deny" and "no prepared request for EXACTLY" in out["hookSpecificOutput"]["permissionDecisionReason"]
 
 
 def test_paid_with_request_asks_once(repo):
-    p = prepare(repo)
-    out = run("gate_pretool.py", bash(repo, "python3 pipeline.py --enhance-only out/x --pay"))
+    cmd = "python3 pipeline.py --enhance-only out/x --pay"
+    p = prepare(repo, cmd)
+    out = run("gate_pretool.py", bash(repo, cmd))
     assert decision(out) == "ask"
     assert "$3.00" in out["hookSpecificOutput"]["permissionDecisionReason"]
     assert json.loads(p.read_text())["status"] == "asked"
     # same request cannot be reused for a second call
-    assert decision(run("gate_pretool.py", bash(repo, "python3 pipeline.py --pay"))) == "deny"
+    assert decision(run("gate_pretool.py", bash(repo, cmd))) == "deny"
+
+
+def test_request_must_name_the_exact_command(repo):
+    prepare(repo, "python pipeline.py --duration 5 --pay", est=0.7)
+    out = run("gate_pretool.py", bash(repo, "python pipeline.py --duration 15 --tier pro --pay"))
+    reason = out["hookSpecificOutput"]["permissionDecisionReason"]
+    assert decision(out) == "deny" and "--duration 5" in reason  # shows what WAS prepared
+
+
+def test_stale_zero_and_cap_zero_requests_denied(repo):
+    prepare(repo, age_h=30)
+    assert decision(run("gate_pretool.py", bash(repo, "python pipeline.py --pay"))) == "deny"
+    prepare(repo, est=0, rid="r2")
+    assert "positive est_usd" in run("gate_pretool.py", bash(repo, "python pipeline.py --pay"))["hookSpecificOutput"]["permissionDecisionReason"]
+    cfg = json.loads((repo / ".harness" / "config.json").read_text())
+    cfg["paid"]["daily_cap_usd"] = 0
+    (repo / ".harness" / "config.json").write_text(json.dumps(cfg))
+    prepare(repo, rid="r3")
+    assert "cap is 0" in run("gate_pretool.py", bash(repo, "python pipeline.py --pay"))["hookSpecificOutput"]["permissionDecisionReason"]
+
+
+@pytest.mark.parametrize("cmd", ["for i in 1 2 3; do python pipeline.py --pay; done",
+                                 "python pipeline.py --a --pay && python pipeline.py --b --pay"])
+def test_several_paid_calls_per_command_denied(repo, cmd):
+    prepare(repo, cmd)
+    out = run("gate_pretool.py", bash(repo, cmd))
+    assert decision(out) == "deny" and "ONE paid call" in out["hookSpecificOutput"]["permissionDecisionReason"]
 
 
 def test_cap_counts_repo_ledger(repo):
@@ -108,7 +137,7 @@ def test_bypass_mode_treated_as_unattended(repo):
 def test_paid_mcp_tool(repo):
     payload = {"cwd": str(repo), "tool_name": "mcp__fal__submit_job", "tool_input": {"endpoint_id": "x"}}
     assert decision(run("gate_pretool.py", payload)) == "deny"
-    prepare(repo)
+    prepare(repo, "mcp__fal__submit_job")
     assert decision(run("gate_pretool.py", payload)) == "ask"
     free = {"cwd": str(repo), "tool_name": "mcp__fal__get_pricing", "tool_input": {}}
     assert run("gate_pretool.py", free) is None
@@ -154,14 +183,18 @@ def test_config_edit_needs_click(repo):
 
 # ---- Stop hook
 def test_stop_blocks_on_failing_check_then_gives_up(repo):
+    """Mirrors Claude Code: the stop right after a block arrives with stop_hook_active=true."""
     (repo / ".harness" / "check.sh").write_text("echo boom; exit 1\n")
     (repo / "x.py").write_text("print(1)\n")
-    stop = {"cwd": str(repo), "hook_event_name": "Stop"}
-    assert run("stop_check.py", stop)["decision"] == "block"
-    assert run("stop_check.py", stop)["decision"] == "block"
-    out = run("stop_check.py", stop)  # 3rd > max 2 → let it stop, with a message
-    assert "decision" not in out and "still failing" in out["systemMessage"]
-    assert run("stop_check.py", {**stop, "stop_hook_active": True}) is None
+    first = {"cwd": str(repo), "hook_event_name": "Stop", "stop_hook_active": False}
+    again = {**first, "stop_hook_active": True}
+    assert run("stop_check.py", first)["decision"] == "block"      # attempt 1
+    assert run("stop_check.py", again)["decision"] == "block"      # attempt 2 (continuation)
+    out = run("stop_check.py", again)                               # 3rd > max 2 → stop, visibly
+    assert "decision" not in out and "still fails" in out["systemMessage"]
+    assert run("stop_check.py", first) is None                     # next turn, same code: no nagging
+    (repo / "x.py").write_text("print(2)\n")                       # code changed → checked again
+    assert run("stop_check.py", first)["decision"] == "block"
 
 
 def test_stop_passes_and_caches(repo):

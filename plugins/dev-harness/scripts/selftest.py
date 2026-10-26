@@ -13,6 +13,7 @@ so a later config change can't silently bring the bug back. Exit 1 lists failing
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -22,7 +23,8 @@ from gate_pretool import is_paid_bash  # noqa: E402
 
 
 def main() -> int:
-    root = H.find_root(None)
+    roots = H.candidate_roots({"cwd": os.getcwd()})
+    root = roots[0] if len(roots) == 1 else H.find_root(None)
     if not root:
         print("selftest: no .harness/config.json")
         return 0
@@ -37,7 +39,16 @@ def main() -> int:
     bad += [f"paid pattern FALSE POSITIVE (blocks a free command): {c}" for c in cases.get("paid_must_not_match", []) if is_paid_bash(cfg, c)]
     locked = H.locked_patterns(cfg)
     bad += [f"path not locked: {p}" for p in cases.get("locked_must_match", []) if not H.matches_any(p, locked)]
-    n = sum(len(cases.get(k, [])) for k in ("paid_must_match", "paid_must_not_match", "locked_must_match"))
+    # built-in: the gates themselves still catch the standard escapes with THIS repo's config
+    from gate_pretool import merge_guard, shell_write_targets
+    for c in ("gh pr merge 1 --squash", "git push origin main", "git -c core.x=y push origin HEAD:main",
+              "git push --force origin +HEAD:refs/heads/master", "git push --all"):
+        if not merge_guard(root, cfg, c, str(root)):
+            bad.append(f"merge guard misses: {c}")
+    for c in ("sed -i 's/false/true/' .harness/features.json", "echo '{}' > .harness/config.json"):
+        if not shell_write_targets(root, cfg, c, str(root)):
+            bad.append(f"protected-file guard misses: {c}")
+    n = 7 + sum(len(cases.get(k, [])) for k in ("paid_must_match", "paid_must_not_match", "locked_must_match"))
     if bad:
         print(f"dev-harness selftest: {len(bad)}/{n} gate cases fail\n" + "\n".join(f"- {b}" for b in bad))
         return 1

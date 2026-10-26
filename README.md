@@ -10,6 +10,27 @@ A Claude Code plugin that turns "I have an idea" into reviewed pull requests **w
 
 Everything else — planning, building test-first, evaluating, reviewing, logging — is done by agents, and **state lives in the repo** (`docs/specs/`, `.harness/features.json`, `.harness/progress.md`, `.harness/ledger.jsonl`), so any new session (cloud, laptop, phone) picks up where the last one stopped. No copy-pasting between chats.
 
+## What it can and can't guarantee
+
+Three layers, from soft to hard:
+
+1. **Hooks** (guard rails). They stop the normal paths:
+   - the paid command, and a shell script that wraps one;
+   - several paid calls in one command;
+   - `gh pr merge`, GitHub-API merges, and `git push` to main in any form (`HEAD`, `@`, quoted, `-c …`, checkout-then-merge);
+   - MCP merge/push tools;
+   - approving or re-scoping the spec;
+   - editing control or locked files with Edit/Write or a shell command.
+
+   They also work when the session starts in the folder above the repo, which is how cloud sessions start, and they **fail closed** if `.harness/config.json` is unreadable. A PostToolUse hook **restores** protected files that a shell command changed without your approval. An agent that deliberately obfuscates can still get past a text pattern, which is why the next two layers exist.
+2. **Locks inside the program.** `.harness/paid_guard.py` sits in the repo's paid CLI path. It runs only a command you approved through the prompt in the last 30 minutes, and only once. The autoloop runner (not the agent) decides keep or discard. It cross-checks its state against the approved config and a mirror copy inside `.git`.
+3. **Hard backstops.**
+   - **No paid keys in unattended runs** (`env -u …`) or in autoloop evaluations (`paid.secret_env`).
+   - **A spend limit at each provider**, if it offers one. The harness cap only sees spend recorded in this checkout.
+   - **Your merge.** GitHub branch protection would make Gate 3 server-side, but it needs GitHub Pro for private repos. Without it, keep an eye on the PR list.
+
+Requirements: `python3` 3.9+ (macOS's built-in one is fine), `git`, and Claude Code 2.1.295+ (for `onFailure: block`). The hooks do nothing in repos without `.harness/config.json`.
+
 ## Install (once per machine / cloud environment)
 
 ```
@@ -35,7 +56,7 @@ To make every session in a project load it automatically (incl. cloud sessions),
 | `/dev-harness:init [cap]` | Once per repo: paid patterns, daily cap, free check script, CLAUDE.md block |
 | `/dev-harness:spec <idea>` | New feature/change → spec + feature list → **Gate 1** |
 | `/dev-harness:build [id\|all]` | Builder → evaluator → reviewer loop, one feature at a time |
-| `/dev-harness:paid-call <why>` | Prepare → **Gate 2** → run → book exactly one paid call |
+| `/dev-harness:paid-call <why>` | Prepare → **Gate 2** → run → book exactly one paid call (`scripts/book.py` records the actual cost; the estimate is booked automatically when the call runs) |
 | `/dev-harness:experiment <goal>` | Variant tuning: one variable per run, free dry-run first, owner picks the winner |
 | `/dev-harness:ship` | Final checks, PR with evidence → **Gate 3** (you merge) |
 | `/dev-harness:status` | "Where are we?" in under 25 lines |
@@ -48,7 +69,7 @@ Subagents: `dev-harness:planner` (Opus), `builder` (session model), `evaluator` 
 
 The harness never changes itself silently; it learns through files and PRs you merge.
 
-1. **Capture (automatic).** Every gate deny/ask, check failure and autoloop event goes to `.harness/events.jsonl`. Any line you type starting with `LESSON:` lands in `.harness/lessons-inbox.md` and applies at once.
+1. **Capture (automatic).** Every gate deny/ask, check failure, paid call and autoloop event goes to `.harness/events/<branch>.jsonl`. Any line you type starting with `LESSON:` lands in `.harness/lessons-inbox/<branch>.md` and applies at once. One file per branch, so the harness never creates merge conflicts for you.
 2. **Remember (every session).** `.harness/lessons.md` (≤ 30 curated rules) is injected into each session's briefing and checked by the planner and reviewer.
 3. **Guard against regressions.** False positives and misses become cases in `.harness/cases.json`; the Stop hook runs `selftest` so a config change can't bring them back. Harness-level fixes come with a test in `tests/`.
 4. **Retro (you trigger it, or schedule it weekly).** `/dev-harness:retro` scores the period (corrections, false-positive denies, relays, $ per feature), curates lessons, and opens PRs — including deletions of parts that caught nothing.
@@ -67,10 +88,19 @@ For goals where every run is free and a script computes the score. The owner add
   "time_budget_s": 300, "max_runs": 80, "max_hours": 8 } }
 ```
 
-The evaluator's last stdout line is `{"score": <num>, "ok": <guards passed>, "notes": "..."}`. `scripts/autoloop.py` (not the agent) commits each attempt, verifies locked files are byte-identical (else HALT), rejects out-of-scope edits, keeps only improvements (or equal score with less code), resets the rest, logs `results.tsv`, runs the holdout once at the end and writes `docs/autoloop/<run>.md`. Overnight:
+The evaluator's last stdout line is `{"score": <num>, "ok": <guards passed>, "notes": "..."}`. `scripts/autoloop.py` (not the agent):
+- commits each attempt and checks that locked files are byte-identical (otherwise it HALTs);
+- discards edits outside `editable`, and diffs that add a `forbid_in_diff` token (e.g. test-file ids = metric gaming);
+- runs the evaluator without the keys in `paid.secret_env`;
+- keeps only improvements (or an equal score with less code) and git-resets the rest;
+- stops at `max_runs` / `max_hours` / `patience` runs without a keep;
+- at the end scores the holdout once on the base and once on the best commit (overfitting shows), and writes `docs/autoloop/<run>.md`.
+
+A Stop hook keeps an unattended session going while budget remains, and gives up visibly after 3 nudges that produce no new run. Overnight:
 
 ```
-caffeinate -i env HARNESS_UNATTENDED=1 claude -p "/dev-harness:autoloop area-accuracy" --permission-mode acceptEdits --allowedTools "Bash,Read,Edit,Write,Grep,Glob"
+caffeinate -i env -u FAL_KEY -u PIPELINE_ANTHROPIC_KEY HARNESS_UNATTENDED=1 \
+  claude -p "/dev-harness:autoloop area-accuracy" --permission-mode acceptEdits --allowedTools "Bash,Read,Edit,Write,Grep,Glob"
 ```
 
 ## Unattended runs (cloud scheduled tasks, `claude -p`)
@@ -83,11 +113,11 @@ Set `HARNESS_UNATTENDED=1` in the environment. Gates 1 and 2 then deny instead o
 .claude-plugin/marketplace.json      marketplace "ocosar-harness"
 plugins/dev-harness/
   .claude-plugin/plugin.json
-  hooks/hooks.json                   SessionStart briefing · LESSON capture · PreToolUse gates · Stop test + selftest gate
-  scripts/                           stdlib-only Python hook scripts
+  hooks/hooks.json                   SessionStart briefing · LESSON capture · PreToolUse gates · PostToolUse restore + booking · Stop gate
+  scripts/                           stdlib-only Python: hooks, autoloop.py, book.py, spec_hash.py, selftest.py
   agents/                            planner, builder, evaluator, reviewer
   skills/                            init, spec, build, paid-call, experiment, autoloop, retro, ship, status
-  templates/                         config.json, features.json, check.sh, progress.md, lessons.md, cases.json, CLAUDE.md block
+  templates/                         config.json, features.json, check.sh, progress.md, lessons.md, cases.json, paid_guard.py, CLAUDE.md block
 tests/                              gate, autoloop and learning tests (python3 -m pytest -q)
 ```
 
@@ -107,6 +137,26 @@ Every component encodes an assumption about what models can't yet do reliably; r
 
 ## Changelog
 
+- **0.3.0** (2026-10-26). Self-review plus an independent adversarial review (20 findings).
+  - Gates follow the session into child repos (cloud sessions start in the parent folder).
+  - A broken config fails closed.
+  - Spec approval is checked semantically: re-scoping an approved spec needs the owner, and `approved_spec_sha` flags edits made after approval.
+  - Shell writes to protected files are asked about up front and restored afterwards.
+  - Merge escapes closed: `HEAD`/`@`, quoted names, `-c`/`--no-pager`, checkout-then-merge, `gh api` merges/refs/GraphQL, MCP merge/push tools.
+  - Paid requests must name the exact command, expire after 12 h, and allow one call per command (no loops). A cap of 0 means off, not unlimited. Calls are auto-booked at the estimate; `book.py` records actuals.
+  - `paid_guard.py` adds a second lock inside the program.
+  - Stop hook: fixed retries (Claude Code sets `stop_hook_active` on the stop after a block), new files counted by content, a deleted check script now blocks, and unattended autoloops keep going.
+  - Autoloop:
+    - state is cross-checked against the config and a `.git` mirror;
+    - a single score line is enforced;
+    - bytecode is purged;
+    - `direction` is validated;
+    - noisy evaluators are refused;
+    - `report` runs only on the loop branch;
+    - the holdout is sealed during the loop and scored on base and best;
+    - plateau stop, `forbid_in_diff`, and paid keys stripped.
+  - Events, lessons inbox and ledger are now one file per branch (no merge conflicts).
+  - Configured timezone; NotebookEdit is gated; case-insensitive paths on macOS. 90 tests.
 - **0.2.0** (2026-10-26) — autoloop (locked evaluator, runner-decided keep/reset, holdout, report PR); self-improvement loop (events log, `LESSON:` capture, lessons in every briefing, repo `cases.json` selftest in the Stop hook, `/dev-harness:retro`); locked paths guard.
 - **0.1.1** (2026-10-23) — English as default working language.
 - **0.1.0** (2026-10-22) — spec / paid-call / merge gates, build loop, experiment discipline.

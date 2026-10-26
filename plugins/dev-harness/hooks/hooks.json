@@ -1,33 +1,62 @@
 {
-  "description": "dev-harness: briefing (SessionStart), owner-lesson capture (UserPromptSubmit), spec/paid/merge/locked-file gates (PreToolUse), test + selftest gate (Stop). All hooks are no-ops in repos without .harness/config.json.",
+  "description": "dev-harness: briefing (SessionStart), owner-lesson capture (UserPromptSubmit), spec/paid/merge/locked-file gates (PreToolUse), paid-call booking (PostToolUse), autoloop keep-going + test/selftest gate (Stop). All hooks are no-ops in repos without .harness/config.json.",
   "hooks": {
     "SessionStart": [
       {
         "matcher": "startup|resume|clear|compact",
         "hooks": [
-          { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/session_context.py\"", "timeout": 20 }
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/session_context.py\"",
+            "timeout": 20
+          }
         ]
       }
     ],
     "UserPromptSubmit": [
       {
         "hooks": [
-          { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/capture_lesson.py\"", "timeout": 10 }
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/capture_lesson.py\"",
+            "timeout": 10
+          }
         ]
       }
     ],
     "PreToolUse": [
       {
-        "matcher": "Bash|Edit|Write|MultiEdit|mcp__.*",
+        "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit|mcp__.*",
         "hooks": [
-          { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/gate_pretool.py\"", "timeout": 20, "onFailure": "block" }
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/gate_pretool.py\"",
+            "timeout": 20,
+            "onFailure": "block"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/post_tool.py\"",
+            "timeout": 20
+          }
         ]
       }
     ],
     "Stop": [
       {
         "hooks": [
-          { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/stop_check.py\"", "timeout": 900 }
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/stop_check.py\"",
+            "timeout": 900
+          }
         ]
       }
     ]

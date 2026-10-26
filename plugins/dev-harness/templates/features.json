@@ -2,6 +2,7 @@
   "spec": "docs/specs/<slug>/spec.md",
   "approved": false,
   "approved_at": null,
+  "approved_spec_sha": null,
   "features": [
     {
       "id": "F1",

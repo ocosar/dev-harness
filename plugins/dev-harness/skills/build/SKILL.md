@@ -8,7 +8,7 @@ argument-hint: "[feature id | all]"
 Target: $ARGUMENTS (default: the next unfinished feature; `all` = keep going until done or blocked).
 
 Preconditions — stop and report if any fails:
-- `.harness/features.json` exists and `"approved": true`.
+- `.harness/features.json` exists, `"approved": true`, and `approved_spec_sha` equals the output of `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/spec_hash.py"` (otherwise the spec changed after approval — ask the owner to re-approve).
 - Working tree clean or only harness bookkeeping changed; on a `claude/<slug>` branch (create it from the spec branch / main if needed).
 
 Loop, per feature:

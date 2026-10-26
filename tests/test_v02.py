@@ -71,7 +71,7 @@ def test_locked_evaluator_needs_owner_and_is_logged(repo):
     out = hook("gate_pretool.py", edit_payload(repo, "refdata/a.json"), env={"HARNESS_UNATTENDED": "1"})
     assert out["hookSpecificOutput"]["permissionDecision"] == "deny"
     assert hook("gate_pretool.py", edit_payload(repo, "params.txt")) is None
-    ev = [json.loads(l) for l in (repo / ".harness" / "events.jsonl").read_text().splitlines()]
+    ev = [json.loads(l) for l in (repo / ".harness" / "events" / "main.jsonl").read_text().splitlines()]
     assert [e["kind"] for e in ev] == ["gate_ask", "gate_deny"] and ev[0]["input"].endswith("eval/score.py")
 
 
@@ -79,7 +79,7 @@ def test_locked_evaluator_needs_owner_and_is_logged(repo):
 def test_lesson_capture(repo):
     out = hook("capture_lesson.py", {"cwd": str(repo), "prompt": "fix it\nLESSON: always test inside the Docker image\nthanks"})
     assert "captured 1" in out["hookSpecificOutput"]["additionalContext"]
-    assert "always test inside the Docker image" in (repo / ".harness" / "lessons-inbox.md").read_text()
+    assert "always test inside the Docker image" in (repo / ".harness" / "lessons-inbox" / "main.md").read_text()
     assert hook("capture_lesson.py", {"cwd": str(repo), "prompt": "no lesson here"}) is None
     (repo / ".harness" / "lessons.md").write_text("# Lessons\n\n- ffmpeg: test in image (source: PR 9)\n")
     ctx = hook("session_context.py", {"cwd": str(repo)})["hookSpecificOutput"]["additionalContext"]
@@ -136,7 +136,7 @@ def test_autoloop_keep_discard_report(repo):
     md = next((repo / "docs" / "autoloop").glob("tune-*.md")).read_text()
     assert "| 5 |" in md and "v=7" in md
     assert g(repo, "status", "--porcelain") == ""  # report committed, tree clean
-    assert "autoloop_report" in (repo / ".harness" / "events.jsonl").read_text()
+    assert "autoloop_report" in "".join(f.read_text() for f in (repo / ".harness" / "events").glob("*.jsonl"))
 
 
 def test_autoloop_halts_on_tampering(repo):

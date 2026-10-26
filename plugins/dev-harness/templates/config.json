@@ -1,6 +1,7 @@
 {
   "version": 1,
   "language": "en",
+  "timezone": "UTC",
   "paid": {
     "daily_cap_usd": 10,
     "bash_patterns": [
@@ -10,7 +11,9 @@
     "mcp_tools": [
       "mcp__fal__(run_model|submit_job|submit_jobs)"
     ],
-    "extra_ledgers": []
+    "extra_ledgers": [],
+    "secret_env": [],
+    "request_max_age_h": 12
   },
   "protected_branches": [
     "main",

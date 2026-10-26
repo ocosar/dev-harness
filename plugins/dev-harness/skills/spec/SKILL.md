@@ -15,6 +15,6 @@ Idea from the owner: $ARGUMENTS
    - the feature list (id + title + PAID marker),
    - estimated paid cost with sources, and open questions,
    - the spec file links.
-5. **Stop.** Ask: "Approve the spec?" When the owner says yes in chat, set `"approved": true` and `"approved_at"` in `.harness/features.json` — the hook will show the owner a confirmation prompt; that click is Gate 1. If they want changes, revise and ask again (approval resets to false on any scope change).
+5. **Stop.** Ask: "Approve the spec?" When the owner says yes in chat, run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/spec_hash.py"` and, in ONE edit of `.harness/features.json`, set `"approved": true`, `"approved_at"` (now) and `"approved_spec_sha"` (that output) — the hook shows the owner a confirmation prompt; that click is Gate 1. If spec.md/plan.md change later, the briefing flags it and building stops until the owner re-approves. If they want changes, revise and ask again (approval resets to false on any scope change).
 
 Never start building in the same turn as writing the spec.

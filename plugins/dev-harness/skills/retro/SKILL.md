@@ -9,8 +9,9 @@ Period: $ARGUMENTS (default: since the last entry in `.harness/retro.md`, else t
 The harness improves only through PRs the owner merges. You may never weaken a gate: anything that lets an agent spend money, merge, approve a spec, or change a locked evaluator without the owner is out of scope for a retro — at most, describe it as a question for the owner.
 
 **1. Gather (read-only)**
-- `.harness/events.jsonl` in the period: `gate_deny` / `gate_ask` (with tool, input, reason), `check_fail`, `check_gave_up`, `lesson_captured`, `autoloop_*`.
-- `.harness/lessons-inbox.md`, `.harness/lessons.md`, `.harness/progress.md` (incl. "Pilot metrics"), `.harness/ledger.jsonl`, `.harness/requests/`, `docs/autoloop/*.md`.
+- `.harness/events/*.jsonl` (one file per branch) in the period: `gate_deny` / `gate_ask` (with tool, input, reason), `check_fail`, `check_gave_up`, `lesson_captured`, `paid_executed`, `paid_booked`, `paid_ran_without_request`, `autoloop_*`.
+- `.harness/lessons-inbox/*.md`, `.harness/lessons.md`, `.harness/progress.md` (incl. "Pilot metrics"), `.harness/ledger/*.jsonl` (+ the repo's own ledgers in config), `.harness/requests/` (any `asked`/`executed` request never booked = a bookkeeping gap), `docs/autoloop/*.md`.
+- Only what is merged or on this branch is visible here; run the retro on main after merges, or say which branches were not covered.
 - Owner's PR reviews and comments in the period: `gh pr list --state all --search "updated:>=<date>"`, then `gh pr view <n> --comments`. Owner corrections are the most valuable signal.
 
 **2. Classify every gate deny/ask**: correct (it stopped something that needed the owner) · false positive (it blocked a free/harmless action) · unclear. Count friction: owner messages that only relayed or re-explained something the repo state already held.
@@ -20,7 +21,7 @@ The harness improves only through PRs the owner merges. You may never weaken a g
 Use numbers you counted; write `?` when the data isn't there and say what would capture it.
 
 **4. Repo lessons (PR in this repo)**
-- Curate `lessons-inbox.md` + recurring failures into `.harness/lessons.md`: one line each, `- <area>: <rule> (source: <date / PR / commit>)`, ≤ 30 lines total, merge duplicates, drop lessons that are now enforced in code or obsolete. Empty the inbox after curating.
+- Curate `.harness/lessons-inbox/*.md` + recurring failures into `.harness/lessons.md`: one line each, `- <area>: <rule> (source: <date / PR / commit>)`, ≤ 30 lines total, merge duplicates, drop lessons that are now enforced in code or obsolete. Delete the curated inbox files after curating.
 - Every false positive or missed paid pattern becomes a case in `.harness/cases.json` (`paid_must_not_match` / `paid_must_match`) plus the config fix that makes `selftest` pass. Config changes prompt the owner — that is expected.
 
 **5. Harness changes (PR on ocosar/dev-harness)** — only for problems that are not repo-specific: a gate that misfires everywhere, a skill step that keeps getting skipped, a report the owner keeps asking to reformat, a missing check.
