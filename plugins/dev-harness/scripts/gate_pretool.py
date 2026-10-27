@@ -241,6 +241,26 @@ def shell_write_targets(root: Path, cfg: dict, cmd: str, cwd: str | None) -> lis
     return sorted(hit)
 
 
+# ---------- harness self-update: one owner click for the whole install ----------
+INSTALL_RE = re.compile(r"^\s*python[0-9.]*\s+(?:-B\s+)?(\S*install_project\.py)\s+(\S+)\s*$")
+INSTALL_TARGETS = [".claude/settings.json", ".claude/dev-harness/*", ".claude/skills/dev-harness-*",
+                   ".claude/skills/dh-*", ".claude/agents/dev-harness-*", ".claude/agents/dh-*"]
+
+
+def harness_update(root: Path, cmd: str, cwd: str | None) -> str | None:
+    """The installer path if `cmd` is exactly one run of install_project.py into this repo, else None."""
+    m = INSTALL_RE.match(cmd)
+    if not m:
+        return None
+    target = Path(os.path.expanduser(m.group(2).strip("'\"")))
+    if not target.is_absolute():
+        target = Path(cwd or root) / target
+    try:
+        return m.group(1) if target.resolve() == root.resolve() else None
+    except OSError:
+        return None
+
+
 def commit_touches_protected(root: Path, cfg: dict, cmd: str, cwd: str | None) -> list[str]:
     m = COMMIT_RE.search(cmd)
     if not m:
@@ -445,6 +465,13 @@ def evaluate(root: Path, payload: dict) -> list[tuple[str, str, dict]]:
                                              "Approve only if you have read the PR and want it on main now "
                                              "(if main deploys automatically, this click is also the deploy).")
             return [(d, r, {})]
+        inst = harness_update(root, cmd, cwd)
+        if inst:
+            d, r = ask_or_deny(cfg, payload, f"HARNESS UPDATE — `{cmd.strip()}` rewrites the harness itself in "
+                                             f"{root.name}/.claude/ (hooks, skills, agents, settings). One click approves "
+                                             "this install only; other protected files stay protected. Approve only if "
+                                             "you asked for this update and trust the installer's source.")
+            return [(d, r, {"owner_ok": list(INSTALL_TARGETS)})]
         script = paid_script(root, cfg, cmd, cwd)
         n_paid = paid_matches(cfg, cmd)
         if n_paid > 1 or ((n_paid or script) and LOOP_RE.search(cmd)):

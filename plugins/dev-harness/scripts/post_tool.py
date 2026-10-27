@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import subprocess
 import sys
 import time
@@ -60,13 +61,23 @@ def guard_files(root: Path, payload: dict) -> list[str]:
                 pass
     before = pre.get("snap") or {}
     after = H.snapshot(root, patterns=pre.get("patterns") or [])
-    changed = [r for r in H.snapshot_diff(root, before, after) if not H.matches_any(r, pre.get("owner_ok") or [])]
+    ok_pats = [p + "*" if p.endswith("/") else p for p in (pre.get("owner_ok") or [])]  # "dir/" = its subtree
+    changed = [r for r in H.snapshot_diff(root, before, after) if not H.matches_any(r, ok_pats)]
     if not changed:
         return []
     cmd = (payload.get("tool_input") or {}).get("command", "")
     if H.git(root, "rev-parse", "HEAD") != pre.get("head"):
-        H.log_event(root, "protected_changed_by_git", files=changed[:8], input=cmd)
-        return []
+        # The command moved HEAD. A checkout/pull/merge legitimately brings other versions of protected files;
+        # but a command that CHANGES protected files and COMMITS them must not slip through. If the new commits
+        # (old HEAD..HEAD, when old HEAD is an ancestor) touch the changed files, restore them in the working tree.
+        old = pre.get("head") or ""
+        moved_by_commit = bool(old) and subprocess.run(["git", "merge-base", "--is-ancestor", old, "HEAD"], cwd=root,
+                                                       capture_output=True).returncode == 0
+        touched = set(H.git(root, "diff", "--name-only", f"{old}..HEAD").splitlines()) if moved_by_commit else set()
+        if not (moved_by_commit and re.search(r"\bgit\b[^\n;&|]*\bcommit\b", cmd) and touched & set(changed)):
+            H.log_event(root, "protected_changed_by_git", files=changed[:8], input=cmd)
+            return []
+        changed = [r for r in changed if r in touched]
     reverted, kept, failed = [], [], []
     for rel in changed:
         b = before.get(rel)
@@ -82,7 +93,11 @@ def guard_files(root: Path, payload: dict) -> list[str]:
         (reverted if restore(root, rel, b) else failed).append(rel)
     if reverted or failed:
         H.log_event(root, "protected_reverted", files=reverted[:8], unrestorable=failed[:8], input=cmd)
-    return [f"reverted {r}" for r in reverted] + [f"COULD NOT restore {r}" for r in failed]
+    out = [f"reverted {r}" for r in reverted] + [f"COULD NOT restore {r}" for r in failed]
+    if reverted and H.git(root, "rev-parse", "HEAD") != pre.get("head"):
+        out.append("the commit you just made contains these unapproved changes — the working tree now has the approved "
+                   "versions back; commit that restore before anything else")
+    return out
 
 
 def book_paid(root: Path, payload: dict) -> None:

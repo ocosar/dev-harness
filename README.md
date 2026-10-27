@@ -42,7 +42,7 @@ git clone https://github.com/ocosar/dev-harness /tmp/dev-harness
 python3 /tmp/dev-harness/install_project.py .      # run at the repo root, on a branch
 ```
 
-Commit the result via a PR; it is active from the next session. Commands are `/dev-harness-init`, `/dev-harness-spec`, `/dev-harness-build`, `/dev-harness-paid-call`, `/dev-harness-experiment`, `/dev-harness-autoloop`, `/dev-harness-retro`, `/dev-harness-ship`, `/dev-harness-status`; subagents are `dev-harness-planner`, `dev-harness-builder`, `dev-harness-evaluator`, `dev-harness-reviewer`. Re-run the installer to update (idempotent; other settings are kept). The installed copy is a protected control file — changes go through this repo and a re-install PR. If the plugin is also enabled, it stays silent in repos that have their own copy (since 0.3.3). In the rest of this README, `/dev-harness:x` = `/dev-harness-x` for repo installs.
+Commit the result via a PR; it is active from the next session. Commands are `/dev-harness-init`, `/dev-harness-spec`, `/dev-harness-build`, `/dev-harness-paid-call`, `/dev-harness-experiment`, `/dev-harness-autoloop`, `/dev-harness-retro`, `/dev-harness-ship`, `/dev-harness-status`; subagents are `dev-harness-planner`, `dev-harness-builder`, `dev-harness-evaluator`, `dev-harness-reviewer`. Re-run the installer to update (idempotent; other settings are kept). Inside a repo that already has the harness, that run asks you once (since 0.6.1). The installed copy is a protected control file — changes go through this repo and a re-install PR. If the plugin is also enabled, it stays silent in repos that have their own copy (since 0.3.3). In the rest of this README, `/dev-harness:x` = `/dev-harness-x` for repo installs.
 
 ### Option B — plugin (local Claude Code on your machine)
 
@@ -151,6 +151,7 @@ Every component encodes an assumption about what models can't yet do reliably; r
 
 ## Changelog
 
+- **0.6.1** (2026-10-27). From the route-to-drone pilot: running `install_project.py .` inside a repo that has the harness asks the owner ONCE ("HARNESS UPDATE") instead of being reverted file by file. Approving a protected directory now covers the files inside it. Closed a gap: a single command that changed protected files and committed them in the same step was only logged; now the files are restored and the agent is told to commit the restore. Upgrading from 0.3.x–0.6.0: copy `harness_lib.py`, `gate_pretool.py`, `post_tool.py` one by one into `.claude/dev-harness/scripts/` (one click each), then run the installer (one click).
 - **0.6.0** (2026-10-27). Autonomy levels (`.harness/config.json → autonomy`):
   - `manual` (default) — as before.
   - `assisted` — free, low-risk tool calls (tests, git on feature branches, edits inside the repo, package installs) run without Claude Code's permission prompts. Risky ones (rm -r, sudo, curl/ssh, deploy CLIs, force-push, writes outside the repo) keep the normal prompt; anything that may read secrets is asked explicitly. All three gates unchanged.
