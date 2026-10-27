@@ -6,7 +6,7 @@ A Claude Code plugin that turns "I have an idea" into reviewed pull requests **w
 |---|---|---|
 | **1. Spec** | Reads a short spec + feature list, says yes | Setting `"approved": true` in `.harness/features.json` triggers a Yes/No prompt (denied in unattended runs) |
 | **2. Paid call** | Looks at the inputs + estimate, clicks Yes — once per call | Commands/tools matching the repo's paid patterns are blocked unless a request file with a verified estimate exists, the daily cap has room, and the owner clicks. Unattended runs never pay |
-| **3. Merge** | Reviews the PR, clicks Merge | Agents can't `gh pr merge`, push to / commit on `main`, or force-push it |
+| **3. Merge** | Reviews the PR, clicks Merge on GitHub — or, optionally (`"merge": "ask"`), says yes in chat and clicks the merge prompt | Agents can't merge on their own, push to / commit on `main`, or force-push it |
 
 Everything else — planning, building test-first, evaluating, reviewing, logging — is done by agents, and **state lives in the repo** (`docs/specs/`, `.harness/features.json`, `.harness/progress.md`, `.harness/ledger.jsonl`), so any new session (cloud, laptop, phone) picks up where the last one stopped. No copy-pasting between chats.
 
@@ -150,6 +150,7 @@ Every component encodes an assumption about what models can't yet do reliably; r
 
 ## Changelog
 
+- **0.4.0** (2026-10-27). Optional merge by click: with `"merge": "ask"` in `.harness/config.json`, Claude may merge one PR at a time (`gh pr merge <N>` alone, or the GitHub MCP merge tool) after the owner's yes in chat and a click on the prompt — no GitHub visit needed. Default stays `"owner"`. `--admin`, `--auto`, chained merges, direct pushes to main and unattended merges stay blocked.
 - **0.3.3** (2026-10-27). From the first route-to-drone pilot step: when a repo has its own installed copy, the plugin copy stays silent (hooks ran twice); skills use the session's assigned `claude/…` branch; init makes `check.sh` install its test tools in a fresh cloud container.
 - **0.3.2** (2026-10-27). Repo installs use the full name: `/dev-harness-init` etc. (was `/dh-init`); re-installing removes the old `dh-*` copies.
 - **0.3.1** (2026-10-26). `install_project.py`: install the harness into a repo's `.claude/` (no plugin system needed — cloud sessions). The installed hooks, skills, agents and `.claude/settings.json` are control files. `/dev-harness:status` reads the per-branch ledger.

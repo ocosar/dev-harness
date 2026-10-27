@@ -63,10 +63,34 @@ def _branch_of(ref: str, current: str) -> str:
     return ref[len("refs/heads/"):] if ref.startswith("refs/heads/") else ref
 
 
+# merge: "ask" lets exactly these through to the owner's click — one PR, one plain command, no admin/auto-merge
+PR_MERGE_CMD_RE = re.compile(r"^\s*(?:gh\s+pr\s+merge\s+#?(\d+)(?:\s+--(?:squash|merge|rebase|delete-branch|"
+                             r"subject\s+'[^']*'|subject\s+\"[^\"]*\"|body\s+'[^']*'|body\s+\"[^\"]*\"|"
+                             r"match-head-commit\s+\w+))*"
+                             r"|gh\s+api\s+(?:-X\s+PUT\s+|--method\s+PUT\s+)?/?repos/[\w.-]+/[\w.-]+/pulls/(\d+)/merge"
+                             r"(?:\s+(?:-X\s+PUT|--method\s+PUT|-f\s+merge_method=(?:squash|merge|rebase)))*)\s*$")
+
+
+def merge_mode(cfg: dict) -> str:
+    return "ask" if cfg.get("merge") == "ask" else "owner"
+
+
+def merge_request(cmd: str) -> str | None:
+    """PR number when cmd is exactly one allowed merge command, else None."""
+    m = PR_MERGE_CMD_RE.match(cmd)
+    return (m.group(1) or m.group(2)) if m else None
+
+
 def merge_guard(root: Path, cfg: dict, cmd: str, cwd: str | None) -> str | None:
     protected = [b for b in cfg.get("protected_branches", []) if b]
     where = Path(cwd) if cwd and Path(cwd).is_dir() and H.find_root(cwd) == root else root
     if GH_MERGE_RE.search(cmd):
+        if merge_mode(cfg) == "ask" and merge_request(cmd):
+            return None  # handled as an owner prompt in evaluate()
+        if merge_mode(cfg) == "ask":
+            return ("GATE 3 — merging needs the owner's click, one PR per command. Run exactly `gh pr merge <number> "
+                    "--squash` (or `gh api -X PUT repos/<owner>/<repo>/pulls/<number>/merge`) on its own — "
+                    "no --admin, no --auto, nothing chained.")
         return "GATE 3 — merging is the owner's job. Open/update the PR and report; never merge it yourself."
     if protected and re.search(r"(?:gh\s+api|api\.github\.com)[^\n]*git/refs/heads/(" + "|".join(map(re.escape, protected))
                                + r")\b", cmd):
@@ -101,9 +125,16 @@ def merge_guard(root: Path, cfg: dict, cmd: str, cwd: str | None) -> str | None:
     return None
 
 
+def is_mcp_pr_merge(tool: str) -> bool:
+    name = tool.split("__")[-1]
+    return bool(re.search(r"(?i)^merge_?pull_?request$", name))
+
+
 def mcp_merge_guard(cfg: dict, tool: str, ti: dict) -> str | None:
     protected = [b for b in cfg.get("protected_branches", []) if b]
     name = tool.split("__")[-1]
+    if merge_mode(cfg) == "ask" and is_mcp_pr_merge(tool):
+        return None  # owner prompt in evaluate()
     if MCP_MERGE_RE.search(name) and re.search(r"(?i)(pull|pr\b|_pr|branch)", name):
         return "GATE 3 — merging is the owner's job, also through MCP tools. Open/update the PR and report."
     if MCP_PUSH_RE.search(name):
@@ -344,6 +375,12 @@ def evaluate(root: Path, payload: dict) -> list[tuple[str, str, dict]]:
         reason = merge_guard(root, cfg, cmd, cwd) or holdout_guard(root, cmd)
         if reason:
             return [("deny", reason, {})]
+        pr = merge_request(cmd) if merge_mode(cfg) == "ask" else None
+        if pr:
+            d, r = ask_or_deny(cfg, payload, f"GATE 3 — MERGE PR #{pr}. Command: {cmd.strip()}\n"
+                                             "Approve only if you have read the PR and want it on main now "
+                                             "(if main deploys automatically, this click is also the deploy).")
+            return [(d, r, {})]
         script = paid_script(root, cfg, cmd, cwd)
         n_paid = paid_matches(cfg, cmd)
         if n_paid > 1 or ((n_paid or script) and LOOP_RE.search(cmd)):
@@ -365,6 +402,10 @@ def evaluate(root: Path, payload: dict) -> list[tuple[str, str, dict]]:
         reason = mcp_merge_guard(cfg, tool, ti)
         if reason:
             return [("deny", reason, {})]
+        if merge_mode(cfg) == "ask" and is_mcp_pr_merge(tool):
+            d, r = ask_or_deny(cfg, payload, f"GATE 3 — MERGE PR via {tool}: {str(ti)[:300]}\n"
+                                             "Approve only if you have read the PR and want it on main now.")
+            return [(d, r, {})]
         if is_paid_mcp(cfg, tool):
             d, r = paid_gate(root, cfg, payload, f"{tool} {str(ti)[:300]}", tool)
             out.append((d, r, {}))

@@ -6,7 +6,7 @@ This repo runs the dev-harness plugin. The owner is a non-coding product owner: 
 **Three human gates (enforced by hooks — never work around them, never try a different command to get past a deny):**
 1. **Spec** — nothing is built until `.harness/features.json` has `"approved": true`, which only the owner's click can set.
 2. **Paid call** — every call that spends money on an external API needs a prepared request in `.harness/requests/` naming the exact command, a verified estimate, room under the daily cap, and the owner's click. One approval = one call; `.harness/paid_guard.py` enforces it inside the program too. Unattended sessions never pay.
-3. **Merge** — agents never merge, never push to or commit on `main`/`master`. Work on `claude/<slug>` branches and open a PR.
+3. **Merge** — agents never push to or commit on `main`/`master`. Work on `claude/…` branches and open a PR. The owner merges on GitHub — or, if `.harness/config.json` has `"merge": "ask"`, the owner says yes in chat and clicks the merge prompt (one PR per click; see /dev-harness:ship).
 
 **Session routine:** read the SessionStart briefing → `git log --oneline -10` → `.harness/progress.md` tail → pick ONE feature → build test-first → `.harness/check.sh` green → evaluator + reviewer subagents → commit → append to progress.md.
 

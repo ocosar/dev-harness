@@ -29,6 +29,8 @@ DEFAULT_CONFIG = {
         "request_max_age_h": 12,
     },
     "protected_branches": ["main", "master"],
+    # Gate 3 mode: "owner" = the owner merges on GitHub; "ask" = Claude may merge ONE PR per click in the session
+    "merge": "owner",
     "check": {"command": "bash .harness/check.sh", "timeout_s": 600, "max_consecutive_blocks": 3},
     "unattended_env": "HARNESS_UNATTENDED",
     "locked_paths": [],

@@ -19,6 +19,7 @@
     "main",
     "master"
   ],
+  "merge": "owner",
   "check": {
     "command": "bash .harness/check.sh",
     "timeout_s": 600,

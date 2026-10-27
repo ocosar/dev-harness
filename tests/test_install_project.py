@@ -81,3 +81,32 @@ def test_plugin_copy_yields_to_repo_copy(tmp_path):
     (c / "settings.json").write_text("{}")
     r = subprocess.run([sys.executable, "-B", str(plugin)], input=payload, capture_output=True, text=True, env=env)
     assert json.loads(r.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+def _gate(tmp_path, cfg, cmd=None, tool="Bash", ti=None, env_extra=None):
+    (tmp_path / ".harness").mkdir(exist_ok=True)
+    (tmp_path / ".harness" / "config.json").write_text(json.dumps(cfg))
+    payload = {"cwd": str(tmp_path), "tool_name": tool, "tool_use_id": "t", "tool_input": ti or {"command": cmd},
+               "permission_mode": "default"}
+    env = dict(__import__("os").environ, CLAUDE_PROJECT_DIR=str(tmp_path))
+    env.pop("HARNESS_UNATTENDED", None)
+    env.update(env_extra or {})
+    r = subprocess.run([sys.executable, "-B", str(REPO / "plugins/dev-harness/scripts/gate_pretool.py")],
+                       input=json.dumps(payload), capture_output=True, text=True, env=env)
+    return json.loads(r.stdout)["hookSpecificOutput"]["permissionDecision"] if r.stdout.strip() else None
+
+
+def test_merge_mode_ask(tmp_path):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    owner, ask = {}, {"merge": "ask"}
+    m = "gh pr " + "merge 42 --squash"
+    assert _gate(tmp_path, owner, m) == "deny"                       # default: owner merges on GitHub
+    assert _gate(tmp_path, ask, m) == "ask"                          # opt-in: one click per PR
+    assert _gate(tmp_path, ask, "gh api -X PUT repos/o/r/pulls/42/" + "merge -f merge_method=squash") == "ask"
+    for bad in ["gh pr " + "merge 42 --admin", "gh pr " + "merge 42 --auto", "gh pr " + "merge --squash",
+                "gh pr " + "merge 42 && gh pr " + "merge 43", "git push origin HEAD:" + "main"]:
+        assert _gate(tmp_path, ask, bad) == "deny", bad
+    assert _gate(tmp_path, ask, m, env_extra={"HARNESS_UNATTENDED": "1"}) == "deny"
+    mcp = {"pullNumber": 42, "owner": "o", "repo": "r"}
+    assert _gate(tmp_path, owner, tool="mcp__github__merge_pull_request", ti=mcp) == "deny"
+    assert _gate(tmp_path, ask, tool="mcp__github__merge_pull_request", ti=mcp) == "ask"

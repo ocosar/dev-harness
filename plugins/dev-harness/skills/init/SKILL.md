@@ -13,6 +13,7 @@ Set up dev-harness in this repository. Templates are in `${CLAUDE_PLUGIN_ROOT}/t
 
 3. **Write `.harness/config.json`** from the template:
    - `paid.bash_patterns`: regexes that match ONLY commands that actually spend money. Match the script, not the interpreter, so `./pipeline.py`, `python3 pipeline.py` and `uv run pipeline.py` all count: e.g. `pipeline\.py\b[^;&|\n]*\s--pay\b`. Find EVERY entry point that can reach a paid API (grep the code for the provider SDK / HTTP host, and read how past paid runs were launched). Avoid false positives on `grep`, `cat`, docs. Test each regex against 3 real commands and 3 harmless commands mentioning the same words.
+   - `merge`: ask the owner — `"owner"` (default: they merge on GitHub) or `"ask"` (Claude merges ONE PR at a time after a yes in chat plus a click on the prompt; no GitHub visit needed). Unattended sessions can never merge.
    - `paid.mcp_tools`: paid MCP tools available in this environment — both `mcp__<server>__<tool>` and plugin-bundled `mcp__plugin_<plugin>_<server>__<tool>` names.
    - `timezone`: the owner's IANA timezone (e.g. `Europe/Istanbul`) — the daily cap resets at their midnight, and the repo's own ledger timestamps are converted to it.
    - `paid.extra_ledgers`: the repo's own spend ledger if it has one (`{"path": ..., "ts_field": ..., "usd_field": ...}`) so the daily cap counts real spend. (Then the harness does not book paid calls itself, to avoid double counting.)
