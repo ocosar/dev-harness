@@ -33,10 +33,10 @@ def test_install_layout_and_settings(tmp_path):
             path = cmd.split('"')[1].replace("$CLAUDE_PROJECT_DIR", str(tmp_path))
             assert Path(path).is_file(), cmd
     for name in ["init", "spec", "build", "paid-call", "experiment", "autoloop", "retro", "ship", "status"]:
-        text = (c / "skills" / f"dh-{name}" / "SKILL.md").read_text()
-        assert f"name: dh-{name}\n" in text
+        text = (c / "skills" / f"dev-harness-{name}" / "SKILL.md").read_text()
+        assert f"name: dev-harness-{name}\n" in text
     for name in ["planner", "builder", "evaluator", "reviewer"]:
-        assert f"name: dh-{name}\n" in (c / "agents" / f"dh-{name}.md").read_text()
+        assert f"name: dev-harness-{name}\n" in (c / "agents" / f"dev-harness-{name}.md").read_text()
     for f in c.rglob("*"):
         if f.is_file() and f.suffix in (".md", ".py", ".json", ".sh"):
             t = f.read_text()
@@ -45,7 +45,7 @@ def test_install_layout_and_settings(tmp_path):
 
 def test_installed_files_are_control_files(tmp_path):
     c = _install(tmp_path)
-    for rel in [".claude/settings.json", ".claude/skills/dh-build/SKILL.md", ".claude/agents/dh-builder.md",
+    for rel in [".claude/settings.json", ".claude/skills/dev-harness-build/SKILL.md", ".claude/agents/dev-harness-builder.md",
                 ".claude/dev-harness/scripts/gate_pretool.py"]:
         assert H.matches_any(rel, H.CONTROL_FILES), rel
     assert not H.matches_any(".claude/skills/other/SKILL.md", H.CONTROL_FILES)

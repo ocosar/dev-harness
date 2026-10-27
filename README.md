@@ -42,7 +42,7 @@ git clone https://github.com/ocosar/dev-harness /tmp/dev-harness
 python3 /tmp/dev-harness/install_project.py .      # run at the repo root, on a branch
 ```
 
-Commit the result via a PR; it is active from the next session. Commands are `/dh-init`, `/dh-spec`, `/dh-build`, `/dh-paid-call`, `/dh-experiment`, `/dh-autoloop`, `/dh-retro`, `/dh-ship`, `/dh-status`; subagents are `dh-planner`, `dh-builder`, `dh-evaluator`, `dh-reviewer`. Re-run the installer to update (idempotent; other settings are kept). The installed copy is a protected control file — changes go through this repo and a re-install PR. Don't also enable the plugin in the same repo (hooks would run twice). In the rest of this README, `/dev-harness:x` = `/dh-x` for repo installs.
+Commit the result via a PR; it is active from the next session. Commands are `/dev-harness-init`, `/dev-harness-spec`, `/dev-harness-build`, `/dev-harness-paid-call`, `/dev-harness-experiment`, `/dev-harness-autoloop`, `/dev-harness-retro`, `/dev-harness-ship`, `/dev-harness-status`; subagents are `dev-harness-planner`, `dev-harness-builder`, `dev-harness-evaluator`, `dev-harness-reviewer`. Re-run the installer to update (idempotent; other settings are kept). The installed copy is a protected control file — changes go through this repo and a re-install PR. Don't also enable the plugin in the same repo (hooks would run twice). In the rest of this README, `/dev-harness:x` = `/dev-harness-x` for repo installs.
 
 ### Option B — plugin (local Claude Code on your machine)
 
@@ -150,6 +150,7 @@ Every component encodes an assumption about what models can't yet do reliably; r
 
 ## Changelog
 
+- **0.3.2** (2026-10-27). Repo installs use the full name: `/dev-harness-init` etc. (was `/dh-init`); re-installing removes the old `dh-*` copies.
 - **0.3.1** (2026-10-26). `install_project.py`: install the harness into a repo's `.claude/` (no plugin system needed — cloud sessions). The installed hooks, skills, agents and `.claude/settings.json` are control files. `/dev-harness:status` reads the per-branch ledger.
 - **0.3.0** (2026-10-26). Self-review plus an independent adversarial review (20 findings).
   - Gates follow the session into child repos (cloud sessions start in the parent folder).

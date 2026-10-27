@@ -6,11 +6,11 @@
 
 What it writes in the target repo (commit it via a PR; it takes effect in the NEXT session):
   .claude/dev-harness/scripts/    hook + helper scripts (stdlib Python)
-  .claude/dev-harness/templates/  templates used by /dh-init
+  .claude/dev-harness/templates/  templates used by /dev-harness-init
   .claude/dev-harness/VERSION     source commit
-  .claude/skills/dh-<name>/       the skills, as /dh-init, /dh-spec, /dh-build, /dh-paid-call, /dh-experiment,
-                                  /dh-autoloop, /dh-retro, /dh-ship, /dh-status
-  .claude/agents/dh-<name>.md     planner, builder, evaluator, reviewer (as dh-planner, …)
+  .claude/skills/dev-harness-<name>/       the skills, as /dev-harness-init, /dev-harness-spec, /dev-harness-build, /dev-harness-paid-call, /dev-harness-experiment,
+                                  /dev-harness-autoloop, /dev-harness-retro, /dev-harness-ship, /dev-harness-status
+  .claude/agents/dev-harness-<name>.md     planner, builder, evaluator, reviewer (as dev-harness-planner, …)
   .claude/settings.json           hooks merged in (other settings kept; old dev-harness hooks replaced)
 
 All of these are protected by the harness itself once .harness/config.json exists (an agent can't quietly
@@ -30,7 +30,7 @@ ROOT_VAR = "${CLAUDE_PROJECT_DIR}/.claude/dev-harness"
 
 def rewrite(text: str) -> str:
     text = text.replace("${CLAUDE_PLUGIN_ROOT}", ROOT_VAR)
-    text = text.replace("/dev-harness:", "/dh-").replace("`dev-harness:", "`dh-")
+    text = text.replace("/dev-harness:", "/dev-harness-").replace("`dev-harness:", "`dev-harness-")
     return text
 
 
@@ -55,25 +55,27 @@ def main() -> int:
     version = json.loads((SRC / ".claude-plugin" / "plugin.json").read_text())["version"]
     (dest / "VERSION").write_text(f"dev-harness {version} ({sha or 'unknown'}) — installed by install_project.py\n")
 
-    for old in list((claude / "skills").glob("dh-*")) if (claude / "skills").exists() else []:
+    old_skills = [x for g in ("dh-*", "dev-harness-*") for x in (claude / "skills").glob(g)] if (claude / "skills").exists() else []
+    for old in old_skills:  # dh-* = names used by 0.3.1
         shutil.rmtree(old)
     for skill in sorted((SRC / "skills").iterdir()):
         text = rewrite((skill / "SKILL.md").read_text())
-        text = text.replace(f"name: {skill.name}\n", f"name: dh-{skill.name}\n", 1)
+        text = text.replace(f"name: {skill.name}\n", f"name: dev-harness-{skill.name}\n", 1)
         if skill.name == "retro":
             text += ("\n## Installed into the repo (no plugin)\nThis copy was installed by `install_project.py` from "
                      "github.com/ocosar/dev-harness (version in `.claude/dev-harness/VERSION`). Harness fixes go to that "
                      "repo as a PR; this repo then re-runs the installer on a branch and opens a PR — never hand-edit "
                      "the copy under `.claude/`.\n")
-        out = claude / "skills" / f"dh-{skill.name}" / "SKILL.md"
+        out = claude / "skills" / f"dev-harness-{skill.name}" / "SKILL.md"
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(text)
 
-    for old in list((claude / "agents").glob("dh-*.md")) if (claude / "agents").exists() else []:
+    old_agents = [x for g in ("dh-*.md", "dev-harness-*.md") for x in (claude / "agents").glob(g)] if (claude / "agents").exists() else []
+    for old in old_agents:
         old.unlink()
     for agent in sorted((SRC / "agents").glob("*.md")):
-        text = rewrite(agent.read_text()).replace(f"name: {agent.stem}\n", f"name: dh-{agent.stem}\n", 1)
-        out = claude / "agents" / f"dh-{agent.name}"
+        text = rewrite(agent.read_text()).replace(f"name: {agent.stem}\n", f"name: dev-harness-{agent.stem}\n", 1)
+        out = claude / "agents" / f"dev-harness-{agent.name}"
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(text)
 
@@ -97,7 +99,7 @@ def main() -> int:
     settings["hooks"] = {k: v for k, v in current.items() if v}
     settings_path.write_text(json.dumps(settings, indent=2, ensure_ascii=False) + "\n")
     print(f"installed dev-harness {version} into {repo}/.claude — commit it; it is active from the next session.\n"
-          "Skills: /dh-init /dh-spec /dh-build /dh-paid-call /dh-experiment /dh-autoloop /dh-retro /dh-ship /dh-status")
+          "Skills: /dev-harness-init /dev-harness-spec /dev-harness-build /dev-harness-paid-call /dev-harness-experiment /dev-harness-autoloop /dev-harness-retro /dev-harness-ship /dev-harness-status")
     return 0
 
 
