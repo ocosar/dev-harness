@@ -40,7 +40,7 @@ def main() -> int:
         return 2
     now = H._dt.datetime.now().astimezone().isoformat(timespec="seconds")
     est = float(req.get("est_usd") or 0)
-    if not cfg["paid"].get("extra_ledgers"):
+    if not cfg["paid"].get("extra_ledgers") or req.get("builtin"):
         if req.get("booked_estimate"):
             delta = round(actual - est, 6)
             if delta:

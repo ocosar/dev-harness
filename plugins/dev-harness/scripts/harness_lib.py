@@ -35,13 +35,64 @@ DEFAULT_CONFIG = {
     "unattended_env": "HARNESS_UNATTENDED",
     "locked_paths": [],
     "autoloop": {},
+    # Evals beyond Claude's own evaluator/reviewer. 1) manual second opinion: an eval packet the owner pastes into
+    # any other model (default, free). 2) api second opinion: the harness sends the packet itself (paid, gated).
+    # 3) product evals: a fixed eval set + score vs. a baseline, with a pluggable judge model.
+    "evals": {
+        "second_opinion": {
+            "mode": "manual",          # "manual" | "api" | "off"
+            "required": False,         # true → a FAIL verdict stops /dev-harness:ship
+            "provider": "openai",      # api mode: openai | gemini | openrouter | anthropic
+            "model": "",
+            "key_env": "",             # env var holding the key (default per provider)
+            "usd_per_mtok_in": 0,      # from the provider's price page (needed for the estimate)
+            "usd_per_mtok_out": 0,
+            "max_output_tokens": 2000,
+            "max_diff_chars": 60000,
+        },
+        "product": {
+            "enabled": False,
+            "cmd": "",                 # prints a last line {"score": .., "ok": .., "metrics": {..}}
+            "direction": "max",        # or "min"
+            "tolerance": 0,            # allowed worsening vs. baseline before it counts as a regression
+            "paid": False,             # true if cmd spends money (e.g. a model judge) → run it through Gate 2
+            "est_usd": 0,
+            "judge": {"provider": "", "model": ""},   # passed to cmd as HARNESS_JUDGE_PROVIDER / _MODEL
+            "timeout_s": 3600,
+        },
+    },
 }
+
+# Harness tools that spend money themselves — always gated like the repo's own paid commands.
+BUILTIN_PAID_PATTERNS = [r"\b(?:llm_client|second_opinion)\.py\b[^;&|\n]*\s--send\b"]
+
+
+def paid_patterns(cfg: dict) -> list[str]:
+    pats = [p for p in (cfg.get("paid", {}).get("bash_patterns") or []) if p] + BUILTIN_PAID_PATTERNS
+    pe = (cfg.get("evals") or {}).get("product") or {}
+    if pe.get("enabled") and pe.get("paid") and (pe.get("cmd") or "").strip():
+        pats.append(re.escape(pe["cmd"].strip()))   # a paid product eval is gated like any paid command
+    return pats
+
+
+def is_builtin_paid(cmd: str) -> bool:
+    return any(re.search(p, cmd) for p in BUILTIN_PAID_PATTERNS)
+
+
+EVALS_DIR = f"{HARNESS_DIR}/evals"
+EVAL_BASELINE = f"{EVALS_DIR}/baseline.json"
+
+
+def evals_dir(root: Path) -> Path:
+    return root / EVALS_DIR / branch_slug(root)
 
 # Files that steer the harness itself. Changing them needs the owner (Edit/Write → ask; shell → restored).
 CONTROL_FILES = [".harness/config.json", ".harness/check.sh", ".harness/cases.json", ".harness/paid_guard.py",
                  # the harness itself when installed into the repo (install_project.py), and the settings that load it
                  ".claude/settings.json", ".claude/dev-harness/*", ".claude/skills/dev-harness-*",
-                 ".claude/agents/dev-harness-*"]
+                 ".claude/agents/dev-harness-*",
+                 # the product-eval baseline: moving it is the owner's call
+                 ".harness/evals/baseline.json"]
 FEATURES = ".harness/features.json"
 
 

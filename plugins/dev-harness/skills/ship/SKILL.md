@@ -6,10 +6,15 @@ disable-model-invocation: true
 
 1. Confirm: all target features `passes: true` with evidence (or listed as deferred), `bash .harness/check.sh` green, reviewer verdict "ready for owner".
 2. Run the repo's slower pre-merge checks named in CLAUDE.md (e.g. tests inside the production Docker image). Paste the result summary into the PR.
+2b. **Evals** (/dev-harness:eval, per `.harness/config.json → evals`):
+   - Product evals, if enabled: run them (free ones always; paid ones only if the owner asked for them in this ship, through /dev-harness:paid-call). A regression stops here.
+   - Second opinion: `"manual"` (default) → build the packet and give the owner the path with the one-line paste instruction; don't wait for it unless `required: true`. `"api"` → dry run, then one paid request. `"off"` → skip.
+   - With `required: true`, a FAIL verdict (or no verdict yet) stops the ship until it is resolved.
 3. `git fetch origin` and rebase/merge the base branch into the feature branch if needed; re-run checks after.
 4. Open/update the PR. Body (configured language, default English), short:
    - **What changes for the user** (3 bullets max)
    - **Evidence**: review paths / screenshots / frame strips, test results (incl. in-image tests)
+   - **Evals**: Claude reviewer verdict; second opinion (model + verdict, or "packet ready: <path>"); product eval score vs. baseline if enabled
    - **Cost**: spent so far on this work (ledger), expected ongoing cost if any
    - **Risks & rollback**: one line each
    - **Owner checklist**: the 1–3 things to look at before clicking Merge

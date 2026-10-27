@@ -216,7 +216,7 @@ LOOP_RE = re.compile(r"\b(for|while|until)\b[^\n]*\bdo\b|\bxargs\b|\bparallel\b|
 
 
 def paid_matches(cfg: dict, text: str) -> int:
-    return sum(len(re.findall(p, text)) for p in cfg["paid"].get("bash_patterns", []) if p)
+    return sum(len(re.findall(p, text)) for p in H.paid_patterns(cfg))
 
 
 def is_paid_bash(cfg: dict, cmd: str) -> bool:

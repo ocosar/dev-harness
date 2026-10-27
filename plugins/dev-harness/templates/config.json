@@ -27,5 +27,31 @@
   },
   "unattended_env": "HARNESS_UNATTENDED",
   "locked_paths": [],
-  "autoloop": {}
+  "autoloop": {},
+  "evals": {
+    "second_opinion": {
+      "mode": "manual",
+      "required": false,
+      "provider": "openai",
+      "model": "",
+      "key_env": "",
+      "usd_per_mtok_in": 0,
+      "usd_per_mtok_out": 0,
+      "max_output_tokens": 2000,
+      "max_diff_chars": 60000
+    },
+    "product": {
+      "enabled": false,
+      "cmd": "",
+      "direction": "max",
+      "tolerance": 0,
+      "paid": false,
+      "est_usd": 0,
+      "judge": {
+        "provider": "",
+        "model": ""
+      },
+      "timeout_s": 3600
+    }
+  }
 }

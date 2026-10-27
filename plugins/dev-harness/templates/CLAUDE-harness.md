@@ -12,6 +12,8 @@ This repo runs the dev-harness plugin. The owner is a non-coding product owner: 
 
 **State lives in the repo, not in chat:** spec in `docs/specs/<slug>/`, contract in `.harness/features.json` (agents may only change `status`, `passes`, `evidence`), experiments in the experiment log, money in `.harness/ledger.jsonl`.
 
+**Evals:** besides the evaluator and reviewer, /dev-harness:eval gives a second opinion from another model family (a packet the owner pastes, or an API call — paid, gated) and, if enabled, product evals against an owner-approved baseline (`.harness/evals/baseline.json`, a control file).
+
 **Learning:** `.harness/lessons.md` holds rules learned in this repo — follow them. When the owner writes a line starting with `LESSON:`, a hook files it; apply it immediately. `/dev-harness:retro` curates lessons and proposes harness fixes as PRs.
 
 **Locked files:** evaluators and reference data listed under `locked_paths` / autoloop `locked` are frozen; never change how results are measured.

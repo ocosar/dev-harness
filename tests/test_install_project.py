@@ -32,7 +32,7 @@ def test_install_layout_and_settings(tmp_path):
         if cmd != "echo mine":
             path = cmd.split('"')[1].replace("$CLAUDE_PROJECT_DIR", str(tmp_path))
             assert Path(path).is_file(), cmd
-    for name in ["init", "spec", "build", "paid-call", "experiment", "autoloop", "retro", "ship", "status"]:
+    for name in ["init", "spec", "build", "paid-call", "experiment", "autoloop", "retro", "ship", "status", "eval"]:
         text = (c / "skills" / f"dev-harness-{name}" / "SKILL.md").read_text()
         assert f"name: dev-harness-{name}\n" in text
     for name in ["planner", "builder", "evaluator", "reviewer"]:

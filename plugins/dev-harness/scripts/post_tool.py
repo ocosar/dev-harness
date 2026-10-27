@@ -107,7 +107,9 @@ def book_paid(root: Path, payload: dict) -> None:
     path, req = found[-1]
     now = H.now_iso(cfg)
     req.update(status="executed", executed_at=now)
-    if not cfg["paid"].get("extra_ledgers"):
+    if tool == "Bash" and H.is_builtin_paid(key):
+        req["builtin"] = True  # harness's own spend (e.g. second opinion): never in the repo's ledger
+    if not cfg["paid"].get("extra_ledgers") or req.get("builtin"):
         H.append_jsonl(H.ledger_path(root), {"ts": now, "request": path.stem, "kind": "estimate",
                                              "usd": float(req.get("est_usd") or 0), "note": "auto-booked at estimate"})
         req["booked_estimate"] = True

@@ -8,6 +8,7 @@ Build a short status report from repo state only (no guessing):
 - Features: table id | title | status | passes | evidence link.
 - Money: today's spend vs cap (`.harness/ledger/*.jsonl` + configured extra ledgers), this week's total, parked requests in `.harness/requests/` with status `awaiting_approval` or `asked`.
 - Git: current branch, last 5 commits, open PRs (`gh pr list` if available).
+- Evals: second-opinion verdicts on this branch (`eval_packet.py status`), last product eval vs. baseline (`.harness/evals/<branch>/product.json`).
 - Last 3 entries of `.harness/progress.md`.
 - **Needs owner:** a numbered list of decisions/approvals, or "nothing".
 

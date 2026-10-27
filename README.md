@@ -71,6 +71,7 @@ To make every session in a project load it automatically (incl. cloud sessions),
 | `/dev-harness:build [id\|all]` | Builder → evaluator → reviewer loop, one feature at a time |
 | `/dev-harness:paid-call <why>` | Prepare → **Gate 2** → run → book exactly one paid call (`scripts/book.py` records the actual cost; the estimate is booked automatically when the call runs) |
 | `/dev-harness:experiment <goal>` | Variant tuning: one variable per run, free dry-run first, owner picks the winner |
+| `/dev-harness:eval` | Second opinion from another model (paste-in packet by default, API optional) and product evals vs. a baseline (optional) |
 | `/dev-harness:ship` | Final checks, PR with evidence → **Gate 3** (you merge) |
 | `/dev-harness:status` | "Where are we?" in under 25 lines |
 | `/dev-harness:autoloop <profile>` | Overnight tuning for a **free**, script-measured goal: locked evaluator, keep/reset by the runner, report PR |
@@ -150,6 +151,10 @@ Every component encodes an assumption about what models can't yet do reliably; r
 
 ## Changelog
 
+- **0.5.0** (2026-10-27). Evals beyond Claude grading Claude — `/dev-harness:eval`:
+  1. **Second opinion, manual (default):** at ship time the harness writes `.harness/evals/<branch>/packet.md` (spec, acceptance criteria, evidence, diff, fixed reviewer questions; secret-looking values redacted). Paste it into any other model, paste the answer back, and the verdict (PASS / CONCERNS / FAIL) is recorded and shown in the PR.
+  2. **Second opinion, API (optional):** `second_opinion.py --send` sends the same packet to OpenAI, Gemini, OpenRouter or Anthropic. It is a paid call (request + estimate from configured prices + cap + click), booked even when the repo has its own ledger. `required: true` makes a FAIL stop the ship.
+  3. **Product evals (optional):** the repo's eval command scores a fixed set; `product_eval.py` compares it with `.harness/evals/baseline.json` (a control file — moving it needs the owner). A pluggable judge model is passed to the command (`HARNESS_JUDGE_PROVIDER/MODEL`, `llm_client.py` speaks to all four providers). Paid eval sets go through Gate 2; free ones run without paid-API keys.
 - **0.4.0** (2026-10-27). Optional merge by click: with `"merge": "ask"` in `.harness/config.json`, Claude may merge one PR at a time (`gh pr merge <N>` alone, or the GitHub MCP merge tool) after the owner's yes in chat and a click on the prompt — no GitHub visit needed. Default stays `"owner"`. `--admin`, `--auto`, chained merges, direct pushes to main and unattended merges stay blocked.
 - **0.3.3** (2026-10-27). From the first route-to-drone pilot step: when a repo has its own installed copy, the plugin copy stays silent (hooks ran twice); skills use the session's assigned `claude/…` branch; init makes `check.sh` install its test tools in a fresh cloud container.
 - **0.3.2** (2026-10-27). Repo installs use the full name: `/dev-harness-init` etc. (was `/dh-init`); re-installing removes the old `dh-*` copies.

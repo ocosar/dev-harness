@@ -1,6 +1,6 @@
 {
   "name": "dev-harness",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Spec → build → test → review loop for a non-coding owner. Three human gates enforced by hooks: (1) spec approval, (2) every paid external API call (+ daily USD cap), (3) merge to main. Plus an autoresearch-style overnight autoloop for free metrics with locked evaluators, and a retro loop that turns owner lessons and gate events into repo lessons and harness PRs.",
   "author": { "name": "Ozan Coşar" },
   "license": "MIT",

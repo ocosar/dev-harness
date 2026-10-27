@@ -99,7 +99,7 @@ def main() -> int:
     settings["hooks"] = {k: v for k, v in current.items() if v}
     settings_path.write_text(json.dumps(settings, indent=2, ensure_ascii=False) + "\n")
     print(f"installed dev-harness {version} into {repo}/.claude — commit it; it is active from the next session.\n"
-          "Skills: /dev-harness-init /dev-harness-spec /dev-harness-build /dev-harness-paid-call /dev-harness-experiment /dev-harness-autoloop /dev-harness-retro /dev-harness-ship /dev-harness-status")
+          "Skills: /dev-harness-init /dev-harness-spec /dev-harness-build /dev-harness-paid-call /dev-harness-experiment /dev-harness-autoloop /dev-harness-retro /dev-harness-ship /dev-harness-status /dev-harness-eval")
     return 0
 
 
