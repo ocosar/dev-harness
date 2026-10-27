@@ -87,12 +87,15 @@ SAFE_VERBS = {
     "ls", "pwd", "echo", "printf", "cat", "head", "tail", "wc", "nl", "sort", "uniq", "cut", "tr", "comm", "column",
     "diff", "stat", "file", "basename", "dirname", "realpath", "readlink", "tree", "date", "true", "false", "test",
     "which", "cd", "mkdir", "touch", "grep", "egrep", "fgrep", "rg", "ag", "find", "fd", "jq", "yq",
-    "pytest", "tox", "ruff", "flake8", "pylint", "black", "isort", "mypy", "pyright", "coverage", "make",
-}  # sed/awk left off: -i / system() can write or exec — they fall through to the normal prompt
+    "pytest", "tox", "ruff", "flake8", "pylint", "black", "isort", "mypy", "pyright", "coverage",
+}  # sed/awk/make left off: they can write, exec or run arbitrary repo targets — they fall through to the prompt
+# NOTE (honest limit): test runners and package installs still execute repo code (tests, setup scripts). They stay
+# auto-approved because they ARE the routine work; the backstops are the paid guard inside paid CLIs, paid keys kept
+# out of unattended runs, and provider spend limits.
 SAFE_GIT = {"status", "diff", "log", "show", "add", "commit", "branch", "checkout", "switch", "restore", "stash",
             "fetch", "rebase", "merge", "pull", "push", "cherry-pick", "revert", "tag", "describe", "rev-parse",
             "ls-files", "blame", "shortlog", "remote", "worktree"}  # push/merge/main already decided by merge_guard
-SAFE_PKG_SUB = {"install", "ci", "run", "test", "build", "exec", "add", "sync", "list", "show", "why"}
+SAFE_PKG_SUB = {"install", "ci", "test", "add", "sync", "list", "show", "why"}  # not run/exec/build: arbitrary scripts
 SECRET_TOK = re.compile(r"(?i)\.env\b|/\.(?:ssh|aws|gnupg|netrc)|/\.config/(?:gcloud|gh)|(?:^|/)credentials\b"
                         r"|\$\{?[A-Za-z_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD)|/proc/\d+/environ|id_(?:rsa|ed25519)")
 SECRET_VERB = re.compile(r"(?i)^(?:printenv|env|set|export)$")
@@ -124,6 +127,10 @@ def _seg_safe(root: Path, cwd: str | None, seg: str) -> bool:
         return False  # find can delete or run commands
     if any(t == "~" or t.startswith("~/") or t.startswith("../") or "/../" in t for t in toks[1:]):
         return False  # writes/reads reaching outside the repo → normal prompt
+    rroot = str(root.resolve())
+    for t_ in toks[1:]:
+        if t_.startswith("/") and not (t_ == rroot or t_.startswith(rroot + "/") or t_.startswith("/tmp/") or t_ == "/dev/null"):
+            return False  # absolute path outside the repo (and not /tmp) → normal prompt
     if verb in ("python", "python3", "node", "nodejs", "ruby", "perl", "bash", "sh", "zsh", "deno", "bun"):
         rest = toks[1:]
         if verb.startswith("python") and rest[:1] == ["-m"] and rest[1:2] in (["pytest"], ["coverage"], ["ruff"], ["mypy"], ["black"]):
@@ -134,7 +141,7 @@ def _seg_safe(root: Path, cwd: str | None, seg: str) -> bool:
         if sub == "push" and any(f in toks for f in ("--force", "-f", "--force-with-lease", "--delete", "--mirror", "--all", "--prune")):
             return False  # force/delete/bulk push → normal prompt even on a feature branch
         return sub in SAFE_GIT  # excludes config, update-index, hash-object, apply, fast-import, filter-branch
-    if verb in ("pip", "pip3", "npm", "pnpm", "yarn", "npx", "uv", "poetry", "cargo", "go"):
+    if verb in ("pip", "pip3", "npm", "pnpm", "yarn", "uv", "poetry", "cargo", "go"):
         sub = next((t for t in toks[1:] if not t.startswith("-")), "")
         return sub in SAFE_PKG_SUB
     if verb in ("rm", "mv", "cp", "ln", "dd", "tee", "truncate", "chmod", "chown", "rmdir", "shred"):

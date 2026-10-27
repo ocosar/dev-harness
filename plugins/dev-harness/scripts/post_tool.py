@@ -76,8 +76,17 @@ def guard_files(root: Path, payload: dict) -> list[str]:
     # may have carried an unapproved change into HEAD. Restore the WORKING TREE regardless of ancestry, so the
     # change does not take effect in-session, and flag the commit below.
     reverted, kept, failed = [], [], []
+    main_refs = [r for b in (H.load_config(root).get("protected_branches") or ["main", "master"])
+                 for r in (f"origin/{b}", b) if H.git(root, "rev-parse", "--verify", "--quiet", r)]
     for rel in changed:
         b = before.get(rel)
+        if head_moved and main_refs:
+            # Same command pulled/merged the owner's main AND committed: a protected file whose content now equals
+            # main's version came in through the owner's merge — keep it (e.g. right after an update PR is merged).
+            cur = H.git(root, "hash-object", "--", rel)
+            if cur and any(H.git(root, "rev-parse", "--quiet", "--verify", f"{ref}:{rel}") == cur for ref in main_refs):
+                kept.append(rel)
+                continue
         if rel == H.FEATURES:
             try:
                 now = (root / rel).read_text()

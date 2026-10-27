@@ -204,7 +204,7 @@ def test_request_cannot_be_rewound_to_reuse_budget(repo):
     # a brand-new request file is NOT gated
     ti2 = {"file_path": str(repo / ".harness" / "requests" / "r2.json"),
            "content": json.dumps({"status": "prepared", "command": "python3 pipeline.py --pay --b", "est_usd": 4.0})}
-    assert gate(repo, "Write", ti2["file_path"] and "Write", ti=ti2) in (None, "allow")
+    assert gate(repo, "Write", ti=ti2) in (None, "allow")
 
 
 def test_ledger_truncation_is_gated(repo):
@@ -212,3 +212,30 @@ def test_ledger_truncation_is_gated(repo):
     for c in ["rm .harness/ledger/claude-x.jsonl", "echo '' > .harness/ledger/claude-x.jsonl",
               "truncate -s0 .harness/ledger/claude-x.jsonl"]:
         assert gate(repo, cmd=c) in ("ask", "deny"), c                    # never allowed/silent
+
+
+
+def test_assisted_prompts_for_arbitrary_repo_targets_and_outside_paths(repo):
+    cfg(repo, autonomy="assisted")
+    for c in ["make deploy", "npm run release", "pnpm exec something", "npx some-tool", "cat /etc/hostname",
+              "ls /home"]:
+        assert gate(repo, cmd=c) is None, c
+    for c in ["ls /tmp/x", f"ls {repo}/docs", "npm test", "pip install -q requests"]:
+        assert gate(repo, cmd=c) == "allow", c
+
+
+def test_pull_and_commit_keeps_harness_files_merged_on_main(repo):
+    """Right after the owner merges a harness update into main, `git pull … && git commit …` must not undo it."""
+    g(repo, "add", "-A"); g(repo, "commit", "-qm", "wip")
+    g(repo, "checkout", "-q", "main")
+    (repo / ".harness" / "config.json").write_text(json.dumps({"timezone": "Europe/Istanbul", "merge": "ask"}))
+    g(repo, "commit", "-qam", "owner merged harness update")
+    g(repo, "checkout", "-q", "claude/x")
+    cmd = "git merge -q --no-edit main && git commit -q --allow-empty -m after"
+    pre = {"cwd": str(repo), "tool_name": "Bash", "tool_use_id": "pm", "tool_input": {"command": cmd}}
+    e = dict(os.environ); e.pop("HARNESS_UNATTENDED", None)
+    subprocess.run([sys.executable, str(SCRIPTS / "gate_pretool.py")], input=json.dumps(pre), capture_output=True, text=True, env=e)
+    subprocess.run(cmd, shell=True, cwd=repo, check=True)
+    post = subprocess.run([sys.executable, str(SCRIPTS / "post_tool.py")], input=json.dumps(pre), capture_output=True, text=True, env=e)
+    assert '"merge": "ask"' in (repo / ".harness" / "config.json").read_text(), post.stdout
+    assert "reverted" not in post.stdout
