@@ -29,8 +29,17 @@ DEFAULT_CONFIG = {
         "request_max_age_h": 12,
     },
     "protected_branches": ["main", "master"],
-    # Gate 3 mode: "owner" = the owner merges on GitHub; "ask" = Claude may merge ONE PR per click in the session
+    # Gate 3 mode: "owner" = the owner merges on GitHub; "ask" = Claude may merge ONE PR per click in the session;
+    # "auto" = (autopilot only, never for repos that deploy on merge) Claude merges a green PR itself
     "merge": "owner",
+    # How much Claude may do without asking:
+    #   "manual"    — every Claude Code permission prompt + all three gates (default)
+    #   "assisted"  — free, low-risk tool calls are auto-approved (no permission prompts); gates unchanged
+    #   "autopilot" — assisted + free specs approve themselves, paid calls run inside the budget the owner approved
+    #                 with the spec (paid_budget_usd / max_call_usd in features.json), merge "auto" allowed
+    "autonomy": "manual",
+    # true if merging to the default branch deploys (Railway/Pages from main…): then merge "auto" acts like "ask"
+    "deploys_on_merge": False,
     "check": {"command": "bash .harness/check.sh", "timeout_s": 600, "max_consecutive_blocks": 3},
     "unattended_env": "HARNESS_UNATTENDED",
     "locked_paths": [],
@@ -81,6 +90,33 @@ def is_builtin_paid(cmd: str) -> bool:
 
 EVALS_DIR = f"{HARNESS_DIR}/evals"
 EVAL_BASELINE = f"{EVALS_DIR}/baseline.json"
+
+
+def autonomy(cfg: dict) -> str:
+    a = cfg.get("autonomy")
+    return a if a in ("manual", "assisted", "autopilot") else "manual"
+
+
+def load_features(root: Path) -> dict:
+    try:
+        d = json.loads((root / FEATURES).read_text())
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def envelope_spent(root: Path, sha: str) -> float:
+    """What autopilot has run inside this approved spec's budget so far (actual if booked, else estimate).
+    Calls the owner clicked through individually are their own approval and don't use the budget."""
+    total = 0.0
+    for _, r in find_requests(root, ("asked", "executed", "done", "consumed")):
+        if r.get("spec_sha") == sha and r.get("auto"):
+            v = r.get("actual_usd") if r.get("status") == "done" else r.get("est_usd")
+            try:
+                total += float(v or 0)
+            except (TypeError, ValueError):
+                pass
+    return round(total, 6)
 
 
 def evals_dir(root: Path) -> Path:
@@ -456,6 +492,12 @@ def _strip_progress(d: dict) -> dict:
     return {**{k: v for k, v in d.items() if k != "features"},
             "features": [{k: v for k, v in f.items() if k not in ("status", "passes", "evidence")}
                          if isinstance(f, dict) else f for f in feats]}
+
+
+def is_free_spec(feats: dict) -> bool:
+    items = feats.get("features") if isinstance(feats.get("features"), list) else []
+    return bool(items) and not any(isinstance(f, dict) and f.get("paid") for f in items) \
+        and not float(feats.get("paid_budget_usd") or 0)
 
 
 def features_change_ok(before_text: str | None, after_text: str | None) -> tuple[bool, str]:

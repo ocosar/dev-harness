@@ -21,5 +21,6 @@ disable-model-invocation: true
 5. Suggest `/dev-harness:retro` to the owner if the last retro is older than a week or this ship had owner corrections.
 6. Merge mode (`"merge"` in `.harness/config.json`):
    - `"owner"` (default): stop. The owner merges on GitHub.
+   - `"auto"` (only with `autonomy: "autopilot"` and `deploys_on_merge: false`): when every check, the reviewer and the evals are green and no second opinion says FAIL, merge it yourself with `gh pr merge <N> --squash` alone, and say so in the report. If anything is not green, stop as in `"owner"`.
    - `"ask"`: after the PR is open and every check above is green, ask the owner in chat "Merge PR #N now?". Only after a yes, run exactly `gh pr merge <N> --squash` on its own (if `gh pr merge` can't reach GitHub, `gh api -X PUT repos/<owner>/<repo>/pulls/<N>/merge -f merge_method=squash`). The hook shows the owner a prompt — that click is Gate 3. One PR per click; never `--admin`/`--auto`; never in an unattended session. If the click is declined, stop.
 7. Otherwise: never merge, never push to main. Report in the harness format with the PR link. If deploy happens on merge (e.g. Railway from main), say so explicitly in the PR so the owner knows the merge click is also the deploy click.

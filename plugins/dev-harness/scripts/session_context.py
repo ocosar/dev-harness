@@ -31,6 +31,15 @@ def brief(root) -> str:
     lines = [f"# dev-harness is active in {root}",
              "Gates: (1) spec approval, (2) every paid API call (request file + owner click + daily cap), "
              "(3) merge stays with the owner. Hooks enforce these; do not look for workarounds.",
+             {"manual": "Autonomy: manual — ask the owner as usual.",
+              "assisted": "Autonomy: assisted — free, low-risk tool calls run without permission prompts; work through "
+                          "free steps without asking; the three gates are unchanged.",
+              "autopilot": "Autonomy: AUTOPILOT — do not stop to ask between steps. Free specs approve themselves after "
+                           "the reviewer passes (say so in the report); paid calls still need a request file each and run "
+                           "inside the budget the owner approved with the spec (paid_budget_usd / max_call_usd); "
+                           "anything outside it stops for the owner. Merge: " + str(cfg.get("merge", "owner")) +
+                           (" (deploys on merge → owner click)" if cfg.get("deploys_on_merge") else "") + "."
+              }[H.autonomy(cfg)],
              f"Write everything new (chat replies, specs, reports, PR text, commit messages, progress.md) in "
              f"language '{cfg.get('language', 'en')}'; leave existing docs in their own language. "
              "Report format: what was done · commit hashes · "

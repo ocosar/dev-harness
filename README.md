@@ -151,6 +151,10 @@ Every component encodes an assumption about what models can't yet do reliably; r
 
 ## Changelog
 
+- **0.6.0** (2026-10-27). Autonomy levels (`.harness/config.json → autonomy`):
+  - `manual` (default) — as before.
+  - `assisted` — free, low-risk tool calls (tests, git on feature branches, edits inside the repo, package installs) run without Claude Code's permission prompts. Risky ones (rm -r, sudo, curl/ssh, deploy CLIs, force-push, writes outside the repo) keep the normal prompt; anything that may read secrets is asked explicitly. All three gates unchanged.
+  - `autopilot` — assisted + free specs approve themselves after the reviewer; paid calls run without a click inside the budget the owner approved with the spec (`paid_budget_usd`, `max_call_usd` in features.json; daily cap still wins; changing the budget or the spec needs the owner again); `merge: "auto"` lets Claude merge green PRs — never when `deploys_on_merge` is true.
 - **0.5.0** (2026-10-27). Evals beyond Claude grading Claude — `/dev-harness:eval`:
   1. **Second opinion, manual (default):** at ship time the harness writes `.harness/evals/<branch>/packet.md` (spec, acceptance criteria, evidence, diff, fixed reviewer questions; secret-looking values redacted). Paste it into any other model, paste the answer back, and the verdict (PASS / CONCERNS / FAIL) is recorded and shown in the PR.
   2. **Second opinion, API (optional):** `second_opinion.py --send` sends the same packet to OpenAI, Gemini, OpenRouter or Anthropic. It is a paid call (request + estimate from configured prices + cap + click), booked even when the repo has its own ledger. `required: true` makes a FAIL stop the ship.

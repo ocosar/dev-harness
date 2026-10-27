@@ -3,6 +3,8 @@
   "approved": false,
   "approved_at": null,
   "approved_spec_sha": null,
+  "paid_budget_usd": 0,
+  "max_call_usd": 0,
   "features": [
     {
       "id": "F1",

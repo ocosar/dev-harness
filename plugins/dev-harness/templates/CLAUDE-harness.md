@@ -12,6 +12,8 @@ This repo runs the dev-harness plugin. The owner is a non-coding product owner: 
 
 **State lives in the repo, not in chat:** spec in `docs/specs/<slug>/`, contract in `.harness/features.json` (agents may only change `status`, `passes`, `evidence`), experiments in the experiment log, money in `.harness/ledger.jsonl`.
 
+**Autonomy** (`.harness/config.json → autonomy`): `manual` asks as usual; `assisted` auto-approves free, low-risk tool calls; `autopilot` also lets free specs approve themselves after review and runs paid calls inside the budget the owner approved with the spec. Hooks enforce the limits; the briefing says which level is on.
+
 **Evals:** besides the evaluator and reviewer, /dev-harness:eval gives a second opinion from another model family (a packet the owner pastes, or an API call — paid, gated) and, if enabled, product evals against an owner-approved baseline (`.harness/evals/baseline.json`, a control file).
 
 **Learning:** `.harness/lessons.md` holds rules learned in this repo — follow them. When the owner writes a line starting with `LESSON:`, a hook files it; apply it immediately. `/dev-harness:retro` curates lessons and proposes harness fixes as PRs.

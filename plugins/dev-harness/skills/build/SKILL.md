@@ -14,7 +14,8 @@ Preconditions — stop and report if any fails:
 Loop, per feature:
 1. Mark it `in_progress`. Delegate to the **builder** subagent (`dev-harness:builder`) with the feature id. It works test-first and commits.
 2. Delegate to the **evaluator** subagent (`dev-harness:evaluator`) with the feature id. If FAIL → send the concrete failures back to the builder (max 2 rounds), then mark `blocked` with the reason.
-3. If the evaluator says `NEEDS_PAID_RUN` → stop the loop and run the /dev-harness:paid-call procedure for exactly that call. Never batch several paid calls behind one approval.
+3. If the evaluator says `NEEDS_PAID_RUN` → run the /dev-harness:paid-call procedure for exactly that call (one request per call, never batched). In autopilot the hook runs it without a click while it fits the spec's `paid_budget_usd` / `max_call_usd` and the daily cap; outside that it stops for the owner — then stop the loop and report.
+   In assisted/autopilot, don't stop between free steps to ask "shall I continue?" — continue until a gate stops you or the work is done.
 4. Mark `passes: true` only when every criterion is PASS with evidence. Append to `.harness/progress.md`.
 5. Keep each feature to one coherent commit series; do not start the next feature while the current one is red.
 

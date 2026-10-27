@@ -20,6 +20,8 @@
     "master"
   ],
   "merge": "owner",
+  "autonomy": "manual",
+  "deploys_on_merge": false,
   "check": {
     "command": "bash .harness/check.sh",
     "timeout_s": 600,

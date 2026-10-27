@@ -17,6 +17,7 @@ sandbox; the hard backstops are keys absent from unattended runs, provider spend
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import shlex
@@ -72,7 +73,47 @@ PR_MERGE_CMD_RE = re.compile(r"^\s*(?:gh\s+pr\s+merge\s+#?(\d+)(?:\s+--(?:squash
 
 
 def merge_mode(cfg: dict) -> str:
-    return "ask" if cfg.get("merge") == "ask" else "owner"
+    m = cfg.get("merge")
+    if m == "auto":
+        return "auto" if H.autonomy(cfg) == "autopilot" and not cfg.get("deploys_on_merge") else "ask"
+    return "ask" if m == "ask" else "owner"
+
+
+# ---------- assisted / autopilot: which free calls may skip Claude Code's own permission prompt ----------
+RISKY_BASH = re.compile("|".join([
+    r"\bsudo\b", r"\bsu\s", r"\brm\s+-\w*[rR]", r"\brm\s+[^\n;&|]*(?:\s/|~|\$HOME|\*)",
+    r"\bgit\s+push\b[^\n;&|]*(?:--force|\s-f\b|--delete|\s:\S)", r"\bgit\s+(?:reset\s+--hard|clean\s+-\w*f|filter-branch|update-ref|gc\b)",
+    r"\.env\b", r"\bprintenv\b", r"(?:^|[;&|]\s*)(?:env|set|export\s+-p)\s*(?:$|[;&|])", r"/proc/[^\s]*/environ",
+    r"\$\{?[A-Za-z_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD)", r"~/\.(?:ssh|aws|config/gcloud|netrc)|\bcredentials\b",
+    r"\b(?:curl|wget|scp|ssh|sftp|ftp|nc|ncat|telnet)\b", r"\brsync\b[^\n;&|]*:",
+    r"\b(?:railway|wrangler|vercel|netlify|fly|flyctl|heroku|kubectl|helm|terraform|pulumi|aws|gcloud|gsutil|az|doctl)\b",
+    r"\bdocker\s+(?:push|login)", r"\bnpm\s+(?:publish|login|adduser)", r"\btwine\b", r"\bgh\s+(?:release|secret|repo\s+(?:delete|edit|rename)|auth|ssh-key|gpg-key)",
+    r"\bgh\s+api\b[^\n]*(?:-X\s*|--method\s+)(?:DELETE|PATCH|PUT|POST)", r"\bgh\s+api\b[^\n]*\s-[fF]\s",
+    r"\b(?:dd|mkfs\w*|fdisk|shutdown|reboot|halt|crontab|launchctl|systemctl)\b", r"\bchmod\s+-R|\bchown\b", r"\bkill(?:all)?\b",
+    r">\s*/(?!tmp/|dev/null)", r"\b(?:eval|exec)\b", r"\bbase64\s+(?:-d|--decode)",
+]))
+
+
+SECRET_READ = re.compile(r"\.env\b|\bprintenv\b|(?:^|[;&|]\s*)(?:env|set|export\s+-p)\s*(?:$|[;&|])|/proc/[^\s]*/environ"
+                         r"|\$\{?[A-Za-z_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD)|~/\.(?:ssh|aws|netrc)|\bcredentials\b")
+
+
+def auto_allow_reason(root: Path, cfg: dict, payload: dict, tool: str, ti: dict) -> str | None:
+    """assisted+ : a FREE, low-risk call that no gate cares about runs without Claude Code's permission prompt.
+    Anything risky is left to Claude Code's normal permission flow (no decision), never silently allowed."""
+    if H.autonomy(cfg) == "manual":
+        return None
+    if tool == "Bash":
+        cmd = ti.get("command", "") or ""
+        if not cmd.strip() or RISKY_BASH.search(cmd) or len(cmd) > 2000:
+            return None
+        return f"dev-harness {H.autonomy(cfg)}: free, low-risk command auto-approved"
+    if tool in FILE_TOOLS:
+        rel = to_rel(root, payload.get("cwd"), ti.get("file_path") or ti.get("notebook_path") or "")
+        if not rel or rel.startswith("..") or rel.startswith(".git/") or H.matches_any(rel, [".env", ".env.*", "*/.env"]):
+            return None
+        return f"dev-harness {H.autonomy(cfg)}: edit inside the repo auto-approved"
+    return None
 
 
 def merge_request(cmd: str) -> str | None:
@@ -85,9 +126,9 @@ def merge_guard(root: Path, cfg: dict, cmd: str, cwd: str | None) -> str | None:
     protected = [b for b in cfg.get("protected_branches", []) if b]
     where = Path(cwd) if cwd and Path(cwd).is_dir() and H.find_root(cwd) == root else root
     if GH_MERGE_RE.search(cmd):
-        if merge_mode(cfg) == "ask" and merge_request(cmd):
-            return None  # handled as an owner prompt in evaluate()
-        if merge_mode(cfg) == "ask":
+        if merge_mode(cfg) in ("ask", "auto") and merge_request(cmd):
+            return None  # handled in evaluate(): owner prompt ("ask") or allowed ("auto")
+        if merge_mode(cfg) in ("ask", "auto"):
             return ("GATE 3 — merging needs the owner's click, one PR per command. Run exactly `gh pr merge <number> "
                     "--squash` (or `gh api -X PUT repos/<owner>/<repo>/pulls/<number>/merge`) on its own — "
                     "no --admin, no --auto, nothing chained.")
@@ -133,8 +174,8 @@ def is_mcp_pr_merge(tool: str) -> bool:
 def mcp_merge_guard(cfg: dict, tool: str, ti: dict) -> str | None:
     protected = [b for b in cfg.get("protected_branches", []) if b]
     name = tool.split("__")[-1]
-    if merge_mode(cfg) == "ask" and is_mcp_pr_merge(tool):
-        return None  # owner prompt in evaluate()
+    if merge_mode(cfg) in ("ask", "auto") and is_mcp_pr_merge(tool):
+        return None  # owner prompt / auto in evaluate()
     if MCP_MERGE_RE.search(name) and re.search(r"(?i)(pull|pr\b|_pr|branch)", name):
         return "GATE 3 — merging is the owner's job, also through MCP tools. Open/update the PR and report."
     if MCP_PUSH_RE.search(name):
@@ -270,12 +311,24 @@ def paid_gate(root: Path, cfg: dict, payload: dict, what: str, match_key: str) -
         H.write_json(path, req)
         return ("deny", f"GATE 2 — would exceed the daily cap: spent ${spent:.2f} + estimate ${est:.2f} > cap ${cap:.2f}. "
                         "Raising the cap is the owner's decision (.harness/config.json). Report and stop.")
+    feats = H.load_features(root)
+    sha = feats.get("approved_spec_sha")
+    if H.autonomy(cfg) == "autopilot" and feats.get("approved") and sha and sha == H.spec_sha(root, feats):
+        budget = float(feats.get("paid_budget_usd") or 0)
+        max_call = float(feats.get("max_call_usd") or budget)
+        used = H.envelope_spent(root, sha)
+        if budget > 0 and est <= max_call + 1e-9 and used + est <= budget + 1e-9:
+            req.update(status="asked", asked_at=now, auto=True, spec_sha=sha)
+            H.write_json(path, req)
+            return ("allow", f"dev-harness autopilot: paid call inside the budget you approved with the spec "
+                             f"(${used:.2f} + ${est:.2f} of ${budget:.2f}; max ${max_call:.2f}/call; today ${spent:.2f} "
+                             f"/ cap ${cap:.2f}). Request {path.stem}.")
     if H.unattended(cfg, payload):
         req.update(status="awaiting_approval", parked_at=now)
         H.write_json(path, req)
         return ("deny", f"GATE 2 — unattended session: paid calls never run without the owner. Request {path.stem} "
                         "is parked as 'awaiting_approval'. Put it in your report (summary, estimate, review paths) and stop.")
-    req.update(status="asked", asked_at=now)
+    req.update(status="asked", asked_at=now, spec_sha=sha if feats.get("approved") else None)
     H.write_json(path, req)
     return ("ask", "GATE 2 — PAID CALL\n"
                    f"{req.get('summary', '(no summary)')}\n"
@@ -319,6 +372,15 @@ def file_guard(root: Path, cfg: dict, payload: dict, tool: str, ti: dict) -> tup
         if after is None:
             return None
         ok, why = H.features_change_ok(before, after)
+        if not ok and why == "sets the spec approval" and H.autonomy(cfg) == "autopilot":
+            try:
+                new = json.loads(after)
+            except ValueError:
+                new = {}
+            if H.is_free_spec(new) and new.get("approved_spec_sha") == H.spec_sha(root, new):
+                H.log_event(root, "spec_auto_approved", spec=new.get("spec"))
+                return ("allow", "dev-harness autopilot: a FREE spec (no paid features, no budget) approves itself; "
+                                 "the owner sees it in the report and the PR.")
         if not ok:
             return ask_or_deny(cfg, payload, f"GATE 1 — SPEC: this edit {why}. Approve only if you read and accept the "
                                              "spec and feature list as they will be after this edit.")
@@ -375,7 +437,9 @@ def evaluate(root: Path, payload: dict) -> list[tuple[str, str, dict]]:
         reason = merge_guard(root, cfg, cmd, cwd) or holdout_guard(root, cmd)
         if reason:
             return [("deny", reason, {})]
-        pr = merge_request(cmd) if merge_mode(cfg) == "ask" else None
+        pr = merge_request(cmd) if merge_mode(cfg) in ("ask", "auto") else None
+        if pr and merge_mode(cfg) == "auto":
+            return [("allow", f"dev-harness autopilot: auto-merge of PR #{pr} (merge: auto)", {})]
         if pr:
             d, r = ask_or_deny(cfg, payload, f"GATE 3 — MERGE PR #{pr}. Command: {cmd.strip()}\n"
                                              "Approve only if you have read the PR and want it on main now "
@@ -398,10 +462,21 @@ def evaluate(root: Path, payload: dict) -> list[tuple[str, str, dict]]:
                                              "(harness control, spec contract, or a locked evaluator/reference). "
                                              "Approve only if YOU asked for exactly this.")
             out.append((d, r, {"owner_ok": names}))
+        if not out and H.autonomy(cfg) != "manual" and SECRET_READ.search(cmd):
+            d, r = ask_or_deny(cfg, payload, "SECRETS — this command may read or print secret values (.env, environment, "
+                                             "key variables). With fewer prompts on, the harness asks you for these "
+                                             "explicitly. Approve only if you want this.")
+            out.append((d, r, {}))
+        if not out:
+            why = auto_allow_reason(root, cfg, payload, tool, ti)
+            if why:
+                out.append(("allow", why, {}))
     elif tool.startswith("mcp__"):
         reason = mcp_merge_guard(cfg, tool, ti)
         if reason:
             return [("deny", reason, {})]
+        if merge_mode(cfg) == "auto" and is_mcp_pr_merge(tool):
+            return [("allow", "dev-harness autopilot: auto-merge (merge: auto)", {})]
         if merge_mode(cfg) == "ask" and is_mcp_pr_merge(tool):
             d, r = ask_or_deny(cfg, payload, f"GATE 3 — MERGE PR via {tool}: {str(ti)[:300]}\n"
                                              "Approve only if you have read the PR and want it on main now.")
@@ -413,6 +488,10 @@ def evaluate(root: Path, payload: dict) -> list[tuple[str, str, dict]]:
         res = file_guard(root, cfg, payload, tool, ti)
         if res:
             out.append((res[0], res[1], {}))
+        else:
+            why = auto_allow_reason(root, cfg, payload, tool, ti)
+            if why:
+                out.append(("allow", why, {}))
     return out
 
 
@@ -430,10 +509,16 @@ def main() -> None:
     for root in roots:
         for d, r, extra in evaluate(root, payload):
             results.append((root, d, r, extra))
-            H.log_event(root, f"gate_{d}", tool=tool, input=summary, reason=r.splitlines()[0] if r else "")
+            if d != "allow" or "auto-approved" not in r:   # routine auto-approvals are not logged (noise)
+                H.log_event(root, f"gate_{d}", tool=tool, input=summary, reason=r.splitlines()[0] if r else "")
     denies = [x for x in results if x[1] == "deny"]
     asks = [x for x in results if x[1] == "ask"]
-    final = denies[:1] or asks
+    allows = [x for x in results if x[1] == "allow"]
+    # allow only when every harness root that saw the call agrees (no root denied/asked, each root allowed)
+    if not denies and not asks and allows and len({str(x[0]) for x in allows}) == len(roots):
+        final = allows[:1]
+    else:
+        final = denies[:1] or asks
     if tool == "Bash" and not denies:  # snapshot protected files so post_tool.py can undo unapproved shell changes
         tid = payload.get("tool_use_id") or "last"
         for root in roots:
