@@ -80,37 +80,84 @@ def merge_mode(cfg: dict) -> str:
 
 
 # ---------- assisted / autopilot: which free calls may skip Claude Code's own permission prompt ----------
-RISKY_BASH = re.compile("|".join([
-    r"\bsudo\b", r"\bsu\s", r"\brm\s+-\w*[rR]", r"\brm\s+[^\n;&|]*(?:\s/|~|\$HOME|\*)",
-    r"\bgit\s+push\b[^\n;&|]*(?:--force|\s-f\b|--delete|\s:\S)", r"\bgit\s+(?:reset\s+--hard|clean\s+-\w*f|filter-branch|update-ref|gc\b)",
-    r"\.env\b", r"\bprintenv\b", r"(?:^|[;&|]\s*)(?:env|set|export\s+-p)\s*(?:$|[;&|])", r"/proc/[^\s]*/environ",
-    r"\$\{?[A-Za-z_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD)", r"~/\.(?:ssh|aws|config/gcloud|netrc)|\bcredentials\b",
-    r"\b(?:curl|wget|scp|ssh|sftp|ftp|nc|ncat|telnet)\b", r"\brsync\b[^\n;&|]*:",
-    r"\b(?:railway|wrangler|vercel|netlify|fly|flyctl|heroku|kubectl|helm|terraform|pulumi|aws|gcloud|gsutil|az|doctl)\b",
-    r"\bdocker\s+(?:push|login)", r"\bnpm\s+(?:publish|login|adduser)", r"\btwine\b", r"\bgh\s+(?:release|secret|repo\s+(?:delete|edit|rename)|auth|ssh-key|gpg-key)",
-    r"\bgh\s+api\b[^\n]*(?:-X\s*|--method\s+)(?:DELETE|PATCH|PUT|POST)", r"\bgh\s+api\b[^\n]*\s-[fF]\s",
-    r"\b(?:dd|mkfs\w*|fdisk|shutdown|reboot|halt|crontab|launchctl|systemctl)\b", r"\bchmod\s+-R|\bchown\b", r"\bkill(?:all)?\b",
-    r">\s*/(?!tmp/|dev/null)", r"\b(?:eval|exec)\b", r"\bbase64\s+(?:-d|--decode)",
-]))
+# ALLOW-LIST, not a block-list: a command is auto-approved only when EVERY segment's verb is known-safe and the
+# segment has no risky shape (secret read, write outside the repo, command substitution, interpreter inline code,
+# a paid script). Anything else returns None → Claude Code's normal permission prompt still applies.
+SAFE_VERBS = {
+    "ls", "pwd", "echo", "printf", "cat", "head", "tail", "wc", "nl", "sort", "uniq", "cut", "tr", "comm", "column",
+    "diff", "stat", "file", "basename", "dirname", "realpath", "readlink", "tree", "date", "true", "false", "test",
+    "which", "cd", "mkdir", "touch", "grep", "egrep", "fgrep", "rg", "ag", "find", "fd", "jq", "yq",
+    "pytest", "tox", "ruff", "flake8", "pylint", "black", "isort", "mypy", "pyright", "coverage", "make",
+}  # sed/awk left off: -i / system() can write or exec — they fall through to the normal prompt
+SAFE_GIT = {"status", "diff", "log", "show", "add", "commit", "branch", "checkout", "switch", "restore", "stash",
+            "fetch", "rebase", "merge", "pull", "push", "cherry-pick", "revert", "tag", "describe", "rev-parse",
+            "ls-files", "blame", "shortlog", "remote", "worktree"}  # push/merge/main already decided by merge_guard
+SAFE_PKG_SUB = {"install", "ci", "run", "test", "build", "exec", "add", "sync", "list", "show", "why"}
+SECRET_TOK = re.compile(r"(?i)\.env\b|/\.(?:ssh|aws|gnupg|netrc)|/\.config/(?:gcloud|gh)|(?:^|/)credentials\b"
+                        r"|\$\{?[A-Za-z_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD)|/proc/\d+/environ|id_(?:rsa|ed25519)")
+SECRET_VERB = re.compile(r"(?i)^(?:printenv|env|set|export)$")
+SUBST = re.compile(r"\$\(|`|<\(")
 
 
-SECRET_READ = re.compile(r"\.env\b|\bprintenv\b|(?:^|[;&|]\s*)(?:env|set|export\s+-p)\s*(?:$|[;&|])|/proc/[^\s]*/environ"
-                         r"|\$\{?[A-Za-z_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD)|~/\.(?:ssh|aws|netrc)|\bcredentials\b")
+def _seg_safe(root: Path, cwd: str | None, seg: str) -> bool:
+    seg = seg.strip()
+    if not seg:
+        return True
+    if SUBST.search(seg) or SECRET_TOK.search(seg):
+        return False
+    if re.search(r"(?<![0-9&])>\s*(?!/dev/null\b)", seg):  # any redirect except >/dev/null → let the prompt handle it
+        return False
+    try:
+        toks = shlex.split(seg)
+    except ValueError:
+        return False
+    while toks and "=" in toks[0] and not toks[0].startswith("-"):  # leading VAR=val assignments
+        toks = toks[1:]
+    while toks and toks[0] in ("command", "nice", "time", "xargs"):  # harmless wrappers
+        toks = toks[1:]
+    if not toks or toks[0] in ("sudo", "su", "env", "doas"):  # privilege / env-injection front → not auto-allowed
+        return False
+    verb = toks[0].rsplit("/", 1)[-1]
+    if SECRET_VERB.match(verb):
+        return False
+    if verb in ("find", "fd") and any(t in ("-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint") for t in toks):
+        return False  # find can delete or run commands
+    if any(t == "~" or t.startswith("~/") or t.startswith("../") or "/../" in t for t in toks[1:]):
+        return False  # writes/reads reaching outside the repo → normal prompt
+    if verb in ("python", "python3", "node", "nodejs", "ruby", "perl", "bash", "sh", "zsh", "deno", "bun"):
+        rest = toks[1:]
+        if verb.startswith("python") and rest[:1] == ["-m"] and rest[1:2] in (["pytest"], ["coverage"], ["ruff"], ["mypy"], ["black"]):
+            return True
+        return False  # bare scripts and -c/-e inline → normal prompt (could do anything, incl. a paid call)
+    if verb == "git":
+        sub = next((t for t in toks[1:] if not t.startswith("-")), "")
+        if sub == "push" and any(f in toks for f in ("--force", "-f", "--force-with-lease", "--delete", "--mirror", "--all", "--prune")):
+            return False  # force/delete/bulk push → normal prompt even on a feature branch
+        return sub in SAFE_GIT  # excludes config, update-index, hash-object, apply, fast-import, filter-branch
+    if verb in ("pip", "pip3", "npm", "pnpm", "yarn", "npx", "uv", "poetry", "cargo", "go"):
+        sub = next((t for t in toks[1:] if not t.startswith("-")), "")
+        return sub in SAFE_PKG_SUB
+    if verb in ("rm", "mv", "cp", "ln", "dd", "tee", "truncate", "chmod", "chown", "rmdir", "shred"):
+        return False  # destructive / out-of-repo moves → normal prompt
+    return verb in SAFE_VERBS
 
 
 def auto_allow_reason(root: Path, cfg: dict, payload: dict, tool: str, ti: dict) -> str | None:
-    """assisted+ : a FREE, low-risk call that no gate cares about runs without Claude Code's permission prompt.
-    Anything risky is left to Claude Code's normal permission flow (no decision), never silently allowed."""
+    """assisted+ : auto-approve ONLY a free, low-risk call on the allow-list above. Everything else returns None,
+    so Claude Code's own permission prompt still applies — the harness never silently allows an unknown command."""
     if H.autonomy(cfg) == "manual":
         return None
     if tool == "Bash":
         cmd = ti.get("command", "") or ""
-        if not cmd.strip() or RISKY_BASH.search(cmd) or len(cmd) > 2000:
+        if not cmd.strip() or len(cmd) > 2000 or H.is_builtin_paid(cmd) or paid_matches(cfg, cmd):
             return None
-        return f"dev-harness {H.autonomy(cfg)}: free, low-risk command auto-approved"
+        if not all(_seg_safe(root, payload.get("cwd"), s) for s in SEG_SPLIT.split(cmd)):
+            return None
+        return f"dev-harness {H.autonomy(cfg)}: allow-listed low-risk command auto-approved"
     if tool in FILE_TOOLS:
         rel = to_rel(root, payload.get("cwd"), ti.get("file_path") or ti.get("notebook_path") or "")
-        if not rel or rel.startswith("..") or rel.startswith(".git/") or H.matches_any(rel, [".env", ".env.*", "*/.env"]):
+        if not rel or rel.startswith("..") or rel.startswith(".git/") \
+                or H.matches_any(rel, [".env", ".env.*", "*/.env", "*.pem", "*.key"]):
             return None
         return f"dev-harness {H.autonomy(cfg)}: edit inside the repo auto-approved"
     return None
@@ -208,7 +255,9 @@ def to_rel(root: Path, cwd: str | None, token: str) -> str | None:
 
 def shell_write_targets(root: Path, cfg: dict, cmd: str, cwd: str | None) -> list[str]:
     """Repo-relative protected paths that `cmd` may write (best effort, errs toward asking)."""
-    pats = H.protected_patterns(cfg)
+    # Spend ledger and paid-request files: the harness's own scripts append to them, but a shell command that
+    # removes, truncates or rewrites one would wipe the daily-cap total or rewind a request → ask up front.
+    pats = H.protected_patterns(cfg) + [".harness/ledger/*", ".harness/requests/*"]
     hit = set()
     for seg in SEG_SPLIT.split(cmd):
         seg = seg.strip()
@@ -252,11 +301,18 @@ def harness_update(root: Path, cmd: str, cwd: str | None) -> str | None:
     m = INSTALL_RE.match(cmd)
     if not m:
         return None
+    installer = Path(os.path.expanduser(m.group(1).strip("'\"")))
+    if not installer.is_absolute():
+        installer = Path(cwd or root) / installer
     target = Path(os.path.expanduser(m.group(2).strip("'\"")))
     if not target.is_absolute():
         target = Path(cwd or root) / target
     try:
-        return m.group(1) if target.resolve() == root.resolve() else None
+        inside = str(installer.resolve()).startswith(str(root.resolve()) + os.sep)
+        # The installer must be a fresh checkout OUTSIDE the repo. A repo-local install_project.py is not trusted
+        # for the one-click whole-install approval (it would otherwise self-grant a rewrite of .claude/settings.json);
+        # it falls through to the ordinary per-file control-file prompts instead.
+        return m.group(1) if (target.resolve() == root.resolve() and not inside) else None
     except OSError:
         return None
 
@@ -415,6 +471,20 @@ def file_guard(root: Path, cfg: dict, payload: dict, tool: str, ti: dict) -> tup
     if H.matches_any(rel, HAND_EDIT_ASK):
         return ask_or_deny(cfg, payload, f"{rel} is written by the harness's own scripts (book.py, autoloop.py). "
                                          "Hand edits change spend records or loop state — approve only if you asked.")
+    if H.matches_any(rel, [".harness/requests/*.json"]) and p.is_file():
+        # Creating a new request is free; rewinding a spent request to 'prepared' to re-approve a paid call is not.
+        SPENT = {"asked", "executed", "done", "consumed", "blocked_cap"}
+        after = _after_text(p, tool, ti)
+        try:
+            old_status = json.loads(p.read_text()).get("status")
+            new_status = json.loads(after).get("status") if after is not None else old_status
+        except (OSError, ValueError):
+            old_status, new_status = None, None
+        if old_status in SPENT and new_status not in SPENT:
+            return ask_or_deny(cfg, payload, f"PAID REQUEST REUSE — {rel} is '{old_status}' (already approved/charged) "
+                                             f"and this edit sets it back to '{new_status}', which would let the same "
+                                             "paid call run again. One request = one call; write a NEW request instead. "
+                                             "Approve only if you truly mean to re-charge this.")
     return None
 
 
@@ -489,7 +559,8 @@ def evaluate(root: Path, payload: dict) -> list[tuple[str, str, dict]]:
                                              "(harness control, spec contract, or a locked evaluator/reference). "
                                              "Approve only if YOU asked for exactly this.")
             out.append((d, r, {"owner_ok": names}))
-        if not out and H.autonomy(cfg) != "manual" and SECRET_READ.search(cmd):
+        if not out and H.autonomy(cfg) != "manual" and (SECRET_TOK.search(cmd) or any(
+                SECRET_VERB.match(w.rsplit("/", 1)[-1]) for w in cmd.split()[:1])):
             d, r = ask_or_deny(cfg, payload, "SECRETS — this command may read or print secret values (.env, environment, "
                                              "key variables). With fewer prompts on, the harness asks you for these "
                                              "explicitly. Approve only if you want this.")

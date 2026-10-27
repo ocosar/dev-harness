@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -114,9 +115,10 @@ def main() -> int:
                    HARNESS_JUDGE_MODEL=(pe.get("judge") or {}).get("model", ""), PYTHONDONTWRITEBYTECODE="1")
         import llm_client as L
         so_key = cfg["evals"]["second_opinion"].get("key_env") or ""
-        for name in list(cfg["paid"].get("secret_env") or []) + list(L.DEFAULT_KEY_ENV.values()) + [so_key]:
-            if name:
-                env.pop(name, None)   # a free eval must not be able to reach paid APIs (incl. model judges)
+        names = set(cfg["paid"].get("secret_env") or []) | set(L.DEFAULT_KEY_ENV.values()) | ({so_key} if so_key else set())
+        names |= {k for k in env if re.search(r"(?i)(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD)$|_(?:KEY|TOKEN|SECRET)_", k)}
+        for name in names:   # a free eval must not reach paid APIs — strip configured + any KEY/TOKEN/SECRET-named var
+            env.pop(name, None)
         try:
             r = subprocess.run(pe["cmd"], shell=True, cwd=root, capture_output=True, text=True, env=env,
                                timeout=int(pe.get("timeout_s") or 3600))

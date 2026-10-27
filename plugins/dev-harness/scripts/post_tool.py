@@ -66,18 +66,15 @@ def guard_files(root: Path, payload: dict) -> list[str]:
     if not changed:
         return []
     cmd = (payload.get("tool_input") or {}).get("command", "")
-    if H.git(root, "rev-parse", "HEAD") != pre.get("head"):
-        # The command moved HEAD. A checkout/pull/merge legitimately brings other versions of protected files;
-        # but a command that CHANGES protected files and COMMITS them must not slip through. If the new commits
-        # (old HEAD..HEAD, when old HEAD is an ancestor) touch the changed files, restore them in the working tree.
-        old = pre.get("head") or ""
-        moved_by_commit = bool(old) and subprocess.run(["git", "merge-base", "--is-ancestor", old, "HEAD"], cwd=root,
-                                                       capture_output=True).returncode == 0
-        touched = set(H.git(root, "diff", "--name-only", f"{old}..HEAD").splitlines()) if moved_by_commit else set()
-        if not (moved_by_commit and re.search(r"\bgit\b[^\n;&|]*\bcommit\b", cmd) and touched & set(changed)):
-            H.log_event(root, "protected_changed_by_git", files=changed[:8], input=cmd)
-            return []
-        changed = [r for r in changed if r in touched]
+    head_moved = H.git(root, "rev-parse", "HEAD") != pre.get("head")
+    if head_moved and not re.search(r"\bgit\b[^\n;&|]*\bcommit\b", cmd):
+        # HEAD moved but the command made no commit (checkout/switch/pull/merge/reset): git legitimately brought
+        # other versions of protected files. Don't fight that — log and leave it.
+        H.log_event(root, "protected_changed_by_git", files=changed[:8], input=cmd)
+        return []
+    # A commit in the command (incl. --amend and soft-reset-then-commit, which rewrite HEAD rather than extend it)
+    # may have carried an unapproved change into HEAD. Restore the WORKING TREE regardless of ancestry, so the
+    # change does not take effect in-session, and flag the commit below.
     reverted, kept, failed = [], [], []
     for rel in changed:
         b = before.get(rel)

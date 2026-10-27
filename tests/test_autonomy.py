@@ -52,15 +52,20 @@ def repo(tmp_path):
     return tmp_path
 
 
+# allow-list policy: only clearly-safe, in-repo, non-paid commands are auto-approved in assisted/autopilot.
 SAFE = ["python3 -m pytest -q", "ls -la", "git status", "git add -A && git commit -m wip", "pip install -q pytest",
-        "git push -u origin HEAD:claude/x", "gh pr create --fill", "python3 tools/x.py --dry-run"]
-RISKY = ["rm -rf build", "sudo apt install x", "cat .env", "printenv", "echo $FAL_KEY", "curl https://x.y",
-         "git push --force origin claude/x", "railway up", "gh secret set X", "git reset --hard HEAD~1",
-         "env", "echo hi > /etc/hosts", "gh api -X POST repos/o/r/issues"]
+        "git push -u origin HEAD:claude/x", "grep -rn foo .", "mkdir -p build && touch build/x", "ruff check ."]
+# secret reads → explicit "ask"; everything else here → no decision (Claude Code's own prompt)
+SECRET = ["cat .env", "printenv", "echo $FAL_KEY", "env"]
+PROMPT = ["rm -rf build", "sudo apt install x", "curl https://x.y", "git push --force origin claude/x",
+          "railway up", "gh secret set X", "git reset --hard HEAD~1", "echo hi > /etc/hosts",
+          "gh api -X POST repos/o/r/issues", "gh pr create --fill", "python3 tools/x.py --dry-run",
+          "python3 -c 'import os;print(os.environ)'", "cp secrets ~/backup", "git config alias.x '!sh'",
+          "node -e 'process.exit(0)'", "sed -i s/a/b/ a.py"]
 
 
 def test_manual_never_auto_allows(repo):
-    for c in SAFE:
+    for c in SAFE + SECRET + PROMPT:
         assert gate(repo, cmd=c) is None, c
     assert gate(repo, "Edit", ti={"file_path": str(repo / "a.py"), "old_string": "1", "new_string": "2"}) is None
 
@@ -69,9 +74,10 @@ def test_assisted_allows_only_low_risk(repo):
     cfg(repo, autonomy="assisted")
     for c in SAFE:
         assert gate(repo, cmd=c) == "allow", c
-    secret = {"cat .env", "printenv", "echo $FAL_KEY", "env"}
-    for c in RISKY:
-        assert gate(repo, cmd=c) == ("ask" if c in secret else None), c   # secrets: explicit ask; rest: normal prompt
+    for c in SECRET:
+        assert gate(repo, cmd=c) == "ask", c
+    for c in PROMPT:
+        assert gate(repo, cmd=c) is None, c                               # falls through to Claude Code's prompt
     assert gate(repo, "Edit", ti={"file_path": str(repo / "a.py"), "old_string": "1", "new_string": "2"}) == "allow"
     assert gate(repo, "Write", ti={"file_path": str(repo / ".env"), "content": "X=1"}) is None
     assert gate(repo, "Write", ti={"file_path": "/etc/passwd", "content": "x"}) is None
@@ -149,3 +155,60 @@ def test_auto_merge_only_in_autopilot_without_deploy(repo):
     assert gate(repo, cmd=m) == "ask"
     cfg(repo, autonomy="autopilot")
     assert gate(repo, cmd=m) == "deny"                              # merge: owner (default)
+
+
+# ---- v0.6.3: findings from the independent review of the autonomy/merge/eval changes ----
+def test_assisted_does_not_auto_allow_env_dump_oneliner(repo):
+    cfg(repo, autonomy="assisted")
+    for c in ["python3 -c 'import os;print(os.environ)'", "python3 - <<'PY'\nimport os;print(os.environ)\nPY",
+              "bash -c 'printenv'", "ls /proc/1/environ", "cat ~/.aws/credentials", "node -e 'console.log(process.env)'"]:
+        assert gate(repo, cmd=c) in (None, "ask"), c                      # never "allow"
+
+
+def test_assisted_does_not_auto_allow_paid_via_subprocess_or_shortflag(repo):
+    cfg(repo, autonomy="assisted", paid={"bash_patterns": [PAY], "daily_cap_usd": 10})
+    for c in ["python3 -c \"import subprocess;subprocess.run(['./pipeline.py','--pay'])\"",
+              "python3 pipeline.py --pay", "FLAG=--pay python3 pipeline.py $FLAG"]:
+        assert gate(repo, cmd=c) != "allow", c
+
+
+@pytest.mark.parametrize("amend_cmd", ["git commit -qam sneaky --amend",
+                                       "git reset --soft HEAD~1 && git commit -qam sneaky"])
+def test_history_rewriting_commit_restores_protected(repo, amend_cmd):
+    # The config change happens DURING the command (so the pre-hook can't pre-flag it), then the command folds it
+    # into HEAD by rewriting history. post_tool must still restore the working tree.
+    cfg(repo, autonomy="assisted")
+    g(repo, "add", "-A")
+    g(repo, "commit", "-qm", "clean")                                     # config is committed & clean at pre time
+    (repo / "edit.py").write_text("open('.harness/config.json','w').write('{\"paid\": {\"daily_cap_usd\": 999}}')\n")
+    g(repo, "add", "edit.py")
+    g(repo, "commit", "-qm", "tool")
+    cmd = f"python3 edit.py && {amend_cmd}"
+    pre = {"cwd": str(repo), "tool_name": "Bash", "tool_use_id": "amd", "tool_input": {"command": cmd}}
+    e = dict(os.environ); e.pop("HARNESS_UNATTENDED", None)
+    d = subprocess.run([sys.executable, str(SCRIPTS / "gate_pretool.py")], input=json.dumps(pre), capture_output=True, text=True, env=e)
+    assert '"permissionDecision": "deny"' not in d.stdout                 # clean at pre time → not pre-flagged
+    subprocess.run(cmd, shell=True, cwd=repo, check=True)
+    post = subprocess.run([sys.executable, str(SCRIPTS / "post_tool.py")], input=json.dumps(pre), capture_output=True, text=True, env=e)
+    assert "999" not in (repo / ".harness" / "config.json").read_text()   # working tree restored
+    assert "reverted .harness/config.json" in post.stdout
+
+
+def test_request_cannot_be_rewound_to_reuse_budget(repo):
+    cfg(repo, autonomy="autopilot")
+    import harness_lib as H
+    rp = repo / ".harness" / "requests" / "r1.json"
+    H.write_json(rp, {"status": "executed", "command": "python3 pipeline.py --pay", "est_usd": 4.0})
+    ti = {"file_path": str(rp), "content": json.dumps({"status": "prepared", "command": "python3 pipeline.py --pay", "est_usd": 4.0})}
+    assert gate(repo, "Write", ti=ti) == "ask"
+    # a brand-new request file is NOT gated
+    ti2 = {"file_path": str(repo / ".harness" / "requests" / "r2.json"),
+           "content": json.dumps({"status": "prepared", "command": "python3 pipeline.py --pay --b", "est_usd": 4.0})}
+    assert gate(repo, "Write", ti2["file_path"] and "Write", ti=ti2) in (None, "allow")
+
+
+def test_ledger_truncation_is_gated(repo):
+    cfg(repo, autonomy="assisted")
+    for c in ["rm .harness/ledger/claude-x.jsonl", "echo '' > .harness/ledger/claude-x.jsonl",
+              "truncate -s0 .harness/ledger/claude-x.jsonl"]:
+        assert gate(repo, cmd=c) in ("ask", "deny"), c                    # never allowed/silent

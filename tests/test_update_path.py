@@ -106,3 +106,11 @@ def test_checkout_of_other_branch_is_not_reverted(repo):
     post = hook("post_tool.py", repo, cmd)
     assert "reverted" not in json.dumps(post or {})
     assert "Istanbul" in (repo / ".harness/config.json").read_text()
+
+
+def test_repo_local_installer_is_not_one_click(repo):
+    # A lookalike install_project.py committed inside the repo must NOT get the whole-install approval
+    # (which grants a rewrite of .claude/settings.json). It falls through to ordinary control-file prompts.
+    (repo / "install_project.py").write_text("# lookalike\n")
+    out = hook("gate_pretool.py", repo, "python3 install_project.py .")
+    assert out is None or "HARNESS UPDATE" not in json.dumps(out)

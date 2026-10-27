@@ -107,7 +107,10 @@ def call(provider: str, model: str, prompt: str, system: str = "", images: list[
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    # allow_abbrev=False: a prefix like `--sen` must NOT be accepted as `--send`, or it would send (spend) while
+    # slipping past a paid pattern that matches the full `--send`.
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter,
+                                 allow_abbrev=False)
     ap.add_argument("--provider", required=True, choices=sorted(DEFAULT_KEY_ENV))
     ap.add_argument("--model", required=True)
     ap.add_argument("--prompt-file", required=True)
