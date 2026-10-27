@@ -290,6 +290,23 @@ def events_path(root: Path) -> Path:
     return root / EVENTS_DIR / f"{branch_slug(root)}.jsonl"
 
 
+def yield_to_repo_copy() -> bool:
+    """True when this is the PLUGIN copy and the project runs its own installed copy (install_project.py) —
+    then the plugin stays silent so every hook doesn't run twice. The repo copy is the one the repo pins."""
+    here = Path(__file__).resolve().parent
+    proj = Path(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
+    for root in [proj] + list(proj.parents)[:3]:
+        own = root / ".claude" / "dev-harness" / "scripts"
+        if own.is_dir():
+            if here == own.resolve():
+                return False
+            try:
+                return ".claude/dev-harness/scripts/gate_pretool.py" in (root / ".claude" / "settings.json").read_text()
+            except OSError:
+                return False
+    return False
+
+
 def log_event(root: Path, kind: str, **data) -> None:
     """Append-only log the retro skill learns from. Never raises."""
     try:

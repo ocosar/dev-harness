@@ -376,6 +376,8 @@ def evaluate(root: Path, payload: dict) -> list[tuple[str, str, dict]]:
 
 
 def main() -> None:
+    if H.yield_to_repo_copy():
+        return
     payload = H.read_stdin_json()
     roots = H.candidate_roots(payload)
     if not roots:

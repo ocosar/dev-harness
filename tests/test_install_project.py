@@ -62,3 +62,22 @@ def test_installed_gate_denies_push_to_main(tmp_path):
     r = subprocess.run([sys.executable, "-B", str(c / "dev-harness" / "scripts" / "gate_pretool.py")],
                        input=json.dumps(payload), capture_output=True, text=True)
     assert json.loads(r.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+def test_plugin_copy_yields_to_repo_copy(tmp_path):
+    c = _install(tmp_path)
+    (tmp_path / ".harness").mkdir()
+    (tmp_path / ".harness" / "config.json").write_text("{}")
+    payload = json.dumps({"cwd": str(tmp_path), "tool_name": "Bash", "tool_use_id": "t",
+                          "tool_input": {"command": "git push origin HEAD:" + "main"}})
+    env = dict(__import__("os").environ, CLAUDE_PROJECT_DIR=str(tmp_path))
+    plugin = REPO / "plugins" / "dev-harness" / "scripts" / "gate_pretool.py"
+    repo_copy = c / "dev-harness" / "scripts" / "gate_pretool.py"
+    r = subprocess.run([sys.executable, "-B", str(plugin)], input=payload, capture_output=True, text=True, env=env)
+    assert r.returncode == 0 and r.stdout.strip() == ""          # plugin stays silent
+    r = subprocess.run([sys.executable, "-B", str(repo_copy)], input=payload, capture_output=True, text=True, env=env)
+    assert json.loads(r.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+    # settings without the repo hooks -> plugin does NOT yield (nothing would guard otherwise)
+    (c / "settings.json").write_text("{}")
+    r = subprocess.run([sys.executable, "-B", str(plugin)], input=payload, capture_output=True, text=True, env=env)
+    assert json.loads(r.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"

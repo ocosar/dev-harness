@@ -116,6 +116,8 @@ def book_paid(root: Path, payload: dict) -> None:
 
 
 def main() -> None:
+    if H.yield_to_repo_copy():
+        return
     payload = H.read_stdin_json()
     notes = []
     for root in H.candidate_roots(payload):

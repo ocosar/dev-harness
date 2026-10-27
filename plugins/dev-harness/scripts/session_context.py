@@ -12,6 +12,8 @@ import harness_lib as H  # noqa: E402
 
 
 def main() -> None:
+    if H.yield_to_repo_copy():
+        return
     payload = H.read_stdin_json()
     roots = H.candidate_roots(payload)
     if not roots:

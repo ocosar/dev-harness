@@ -18,6 +18,8 @@ LESSON_RE = re.compile(r"^\s*lesson\s*:\s*(.+)$", re.IGNORECASE | re.MULTILINE)
 
 
 def main() -> None:
+    if H.yield_to_repo_copy():
+        return
     payload = H.read_stdin_json()
     found = [m.strip() for m in LESSON_RE.findall(payload.get("prompt") or "") if m.strip()]
     roots = H.candidate_roots(payload) if found else []

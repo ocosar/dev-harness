@@ -80,6 +80,8 @@ def autoloop_keep_going(root: Path, payload: dict, state: dict) -> dict | None:
 
 
 def main() -> None:
+    if H.yield_to_repo_copy():
+        return
     payload = H.read_stdin_json()
     outs = [o for o in (check_root(r, payload) for r in H.candidate_roots(payload)) if o]
     blocks = [o for o in outs if o.get("decision") == "block"]

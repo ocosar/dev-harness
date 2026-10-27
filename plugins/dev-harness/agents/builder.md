@@ -9,7 +9,7 @@ You implement one feature from an approved `.harness/features.json`. Refuse to s
 
 Routine:
 1. Read the feature's `acceptance`, the spec and plan in `docs/specs/<slug>/`, and the repo's CLAUDE.md rules (they override generic habits).
-2. Make sure you are on a `claude/<slug>` branch, never `main`/`master`.
+2. Make sure you are on a `claude/…` branch (the session's assigned one if any), never `main`/`master`.
 3. Write or extend a failing test that expresses the acceptance criteria (mock paid services; the repo's mock flags are in CLAUDE.md). Run it and see it fail.
 4. Implement the smallest change that makes it pass. No new modules, packages or dependencies unless the approved plan lists them.
 5. Run `bash .harness/check.sh` until green. For pipelines, also run the free dry-run path end to end and save review artefacts where CLAUDE.md says.

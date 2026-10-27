@@ -9,7 +9,7 @@ Target: $ARGUMENTS (default: the next unfinished feature; `all` = keep going unt
 
 Preconditions — stop and report if any fails:
 - `.harness/features.json` exists, `"approved": true`, and `approved_spec_sha` equals the output of `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/spec_hash.py"` (otherwise the spec changed after approval — ask the owner to re-approve).
-- Working tree clean or only harness bookkeeping changed; on a `claude/<slug>` branch (create it from the spec branch / main if needed).
+- Working tree clean or only harness bookkeeping changed; on a `claude/…` branch — the session's assigned branch if it has one (cloud sessions), else `claude/<slug>` created from the spec branch / main.
 
 Loop, per feature:
 1. Mark it `in_progress`. Delegate to the **builder** subagent (`dev-harness:builder`) with the feature id. It works test-first and commits.
