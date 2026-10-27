@@ -151,6 +151,7 @@ Every component encodes an assumption about what models can't yet do reliably; r
 
 ## Changelog
 
+- **0.6.2** (2026-10-27). Ship skill: in Claude Code cloud sessions merge with the REST call (`gh pr merge` needs GraphQL, which is blocked there).
 - **0.6.1** (2026-10-27). From the route-to-drone pilot: running `install_project.py .` inside a repo that has the harness asks the owner ONCE ("HARNESS UPDATE") instead of being reverted file by file. Approving a protected directory now covers the files inside it. Closed a gap: a single command that changed protected files and committed them in the same step was only logged; now the files are restored and the agent is told to commit the restore. Upgrading from 0.3.x–0.6.0: copy `harness_lib.py`, `gate_pretool.py`, `post_tool.py` one by one into `.claude/dev-harness/scripts/` (one click each), then run the installer (one click).
 - **0.6.0** (2026-10-27). Autonomy levels (`.harness/config.json → autonomy`):
   - `manual` (default) — as before.
