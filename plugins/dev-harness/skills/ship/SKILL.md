@@ -1,7 +1,6 @@
 ---
 name: ship
 description: Gate 3 handover. Final checks on the branch, open or update the PR with an owner-readable summary and evidence, and stop — the owner merges. Use when a feature set is done and reviewed.
-disable-model-invocation: true
 ---
 
 1. Confirm: all target features `passes: true` with evidence (or listed as deferred), `bash .harness/check.sh` green, reviewer verdict "ready for owner".

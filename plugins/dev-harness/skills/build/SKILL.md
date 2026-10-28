@@ -1,7 +1,6 @@
 ---
 name: build
 description: Work through the approved feature contract — one feature at a time, builder → evaluator → reviewer, check.sh green, progress logged — until done, blocked, or a paid call is needed. Use after the spec is approved.
-disable-model-invocation: true
 argument-hint: "[feature id | all]"
 ---
 

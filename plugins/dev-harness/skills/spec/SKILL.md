@@ -1,7 +1,6 @@
 ---
 name: spec
 description: Gate 1. Turn an idea or change request into docs/specs/<slug>/{spec,plan}.md and a feature contract (.harness/features.json), then stop for the owner's approval. Use for any new feature, change or experiment series before code.
-disable-model-invocation: true
 argument-hint: "<idea in your own words>"
 ---
 

@@ -1,7 +1,6 @@
 ---
 name: init
 description: Set up dev-harness in the current repo — .harness/ state files, paid-call patterns and daily cap, free check script, CLAUDE.md block, .gitignore. Run once per repo.
-disable-model-invocation: true
 argument-hint: "[daily cap USD]"
 ---
 
