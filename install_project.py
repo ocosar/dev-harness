@@ -56,6 +56,9 @@ def main() -> int:
     for f in list((dest / "scripts").glob("*.py")) + [x for x in (dest / "templates").rglob("*") if x.is_file()]:
         f.write_text(rewrite(f.read_text()))
     (dest / ".gitignore").write_text("__pycache__/\n")
+    notices = SRC.parents[1] / "THIRD_PARTY_NOTICES.md"
+    if notices.is_file():  # license notice for instructions adapted from other projects travels with the copy
+        shutil.copy2(notices, dest / "THIRD_PARTY_NOTICES.md")
     sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=SRC, capture_output=True, text=True).stdout.strip()
     version = json.loads((SRC / ".claude-plugin" / "plugin.json").read_text())["version"]
     (dest / "VERSION").write_text(f"dev-harness {version} ({sha or 'unknown'}) — installed by install_project.py\n")
