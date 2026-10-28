@@ -613,8 +613,9 @@ def evaluate(root: Path, payload: dict) -> list[tuple[str, str, dict]]:
                                              "you asked for this update and trust the installer's source.")
             return [(d, r, {"owner_ok": list(INSTALL_TARGETS)})]
         script = paid_script(root, cfg, cmd, cwd)
-        n_paid = paid_matches(cfg, cmd)
-        if n_paid > 1 or ((n_paid or script) and LOOP_RE.search(cmd)):
+        scan = strip_data_heredocs(cmd)  # text only written to a file (cat/tee heredoc) is not a call; scripts are
+        n_paid = paid_matches(cfg, scan)  # still caught when RUN (paid_script reads the .sh it runs)
+        if n_paid > 1 or ((n_paid or script) and LOOP_RE.search(scan)):
             return [("deny", "GATE 2 — one approval covers ONE paid call. This command runs several (or a loop). "
                              "Prepare one request per call and run them one by one.", {})]
         if n_paid or script:

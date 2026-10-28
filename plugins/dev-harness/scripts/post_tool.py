@@ -21,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import harness_lib as H  # noqa: E402
-from gate_pretool import is_paid_bash, is_paid_mcp, paid_script  # noqa: E402
+from gate_pretool import is_paid_bash, is_paid_mcp, paid_script, strip_data_heredocs  # noqa: E402
 
 
 def restore(root: Path, rel: str, before: dict | None) -> bool:
@@ -126,7 +126,7 @@ def book_paid(root: Path, payload: dict) -> None:
     tool, ti = payload.get("tool_name", ""), payload.get("tool_input") or {}
     if tool == "Bash":
         cmd = ti.get("command", "") or ""
-        if not (is_paid_bash(cfg, cmd) or paid_script(root, cfg, cmd, payload.get("cwd"))):
+        if not (is_paid_bash(cfg, strip_data_heredocs(cmd)) or paid_script(root, cfg, cmd, payload.get("cwd"))):
             return
         key = cmd
     elif tool.startswith("mcp__") and is_paid_mcp(cfg, tool):

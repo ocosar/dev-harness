@@ -88,3 +88,13 @@ def test_upgrade_from_older_copy_leaves_protected_files_alone(repo):
     (repo / ".harness" / "paid_guard.py").write_text('MSG = "run the /dh-paid-call procedure"\n')
     subprocess.run([sys.executable, str(REPO / "install_project.py"), str(repo)], check=True, capture_output=True)
     assert "/dh-paid-call" in (repo / ".harness/paid_guard.py").read_text()
+
+
+def test_note_quoting_a_paid_call_is_not_a_paid_call(repo):
+    (repo / ".harness" / "config.json").write_text(json.dumps(
+        {"timezone": "UTC", "paid": {"bash_patterns": [r"/api/jobs\b", r"pipeline\.py\b[^;&|\n]*\s--pay\b"], "daily_cap_usd": 10}}))
+    note = "cat >> .harness/progress.md <<'EOF'\n- the app's POST /api/jobs was not called; `python3 pipeline.py --pay` needs a click\nEOF"
+    assert gate(repo, note) is None
+    for cmd in ["bash <<'EOF'\ncurl -X POST https://x/api/jobs\nEOF", "python3 pipeline.py --pay",
+                "cat <<'EOF' | sh\npython3 pipeline.py --pay\nEOF"]:
+        assert gate(repo, cmd) == "deny", cmd                                   # code that runs still counts
