@@ -61,6 +61,19 @@ def guard_files(root: Path, payload: dict) -> list[str]:
                 pass
     before = pre.get("snap") or {}
     after = H.snapshot(root, patterns=pre.get("patterns") or [])
+    cmd0 = (payload.get("tool_input") or {}).get("command", "")
+    try:
+        from gate_pretool import INSTALL_TARGETS, harness_update
+        if harness_update(root, cmd0, payload.get("cwd")):
+            # The owner clicked "HARNESS UPDATE" (PostToolUse only runs after an approved command). Remember exactly
+            # what the installer wrote/removed, so committing THAT content doesn't ask a second time.
+            files = {r: (a.get("sha") if isinstance(a, dict) else None) for r, a in after.items()
+                     if H.matches_any(r, INSTALL_TARGETS)}
+            files.update({r: None for r in before if H.matches_any(r, INSTALL_TARGETS) and r not in after})
+            H.write_json(root / H.HARNESS_DIR / "state" / "approved_install.json",
+                         {"at": time.time(), "files": files})
+    except Exception:
+        pass
     ok_pats = [p + "*" if p.endswith("/") else p for p in (pre.get("owner_ok") or [])]  # "dir/" = its subtree
     changed = [r for r in H.snapshot_diff(root, before, after) if not H.matches_any(r, ok_pats)]
     if not changed:

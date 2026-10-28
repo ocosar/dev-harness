@@ -114,3 +114,18 @@ def test_repo_local_installer_is_not_one_click(repo):
     (repo / "install_project.py").write_text("# lookalike\n")
     out = hook("gate_pretool.py", repo, "python3 install_project.py .")
     assert out is None or "HARNESS UPDATE" not in json.dumps(out)
+
+
+def test_committing_approved_install_output_does_not_ask_again(repo):
+    cmd = f"python3 {REPO}/install_project.py ."
+    assert hook("gate_pretool.py", repo, cmd)["hookSpecificOutput"]["permissionDecision"] == "ask"
+    assert sh(repo, cmd).returncode == 0                                   # owner clicked yes
+    hook("post_tool.py", repo, cmd)                                        # records what the install wrote
+    sh(repo, "git add -A")
+    out = hook("gate_pretool.py", repo, "git commit -m 'dev-harness: update'")
+    assert "PROTECTED FILES" not in json.dumps(out or {})
+    # but a later edit to an installed file is still asked about when committed
+    (repo / ".claude/dev-harness/scripts/book.py").write_text("# tampered\n")
+    sh(repo, "git add -A")
+    out = hook("gate_pretool.py", repo, "git commit -m 'more'")
+    assert "PROTECTED FILES" in json.dumps(out or {})

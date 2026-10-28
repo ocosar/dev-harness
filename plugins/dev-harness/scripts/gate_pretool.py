@@ -363,7 +363,37 @@ def commit_touches_protected(root: Path, cfg: dict, cmd: str, cwd: str | None) -
     if re.search(r"(^|\s)(--all|-[a-zA-Z]*a[a-zA-Z]*)(\s|$)", m.group(1)):
         names += H.git(root, "diff", "--name-only").splitlines()
     pats = H.CONTROL_FILES + H.locked_patterns(cfg)
-    return sorted({n for n in names if H.matches_any(n, pats)})
+    hits = {n for n in names if H.matches_any(n, pats)}
+    return sorted(hits - _approved_install_content(root, hits, staged=set(H.git(root, "diff", "--cached", "--name-only").splitlines())))
+
+
+def _approved_install_content(root: Path, names: set, staged: set) -> set:
+    """Names whose to-be-committed content is exactly what an owner-approved HARNESS UPDATE wrote (≤ 12 h ago)."""
+    import hashlib
+    import json
+    import subprocess
+    import time
+    try:
+        rec = json.loads((root / H.HARNESS_DIR / "state" / "approved_install.json").read_text())
+        if time.time() - float(rec.get("at", 0)) > 12 * 3600:
+            return set()
+        files = rec.get("files") or {}
+    except (OSError, ValueError):
+        return set()
+    ok = set()
+    for n in names:
+        if n not in files:
+            continue
+        if n in staged:
+            r = subprocess.run(["git", "show", f":{n}"], cwd=root, capture_output=True)
+            data = r.stdout if r.returncode == 0 else None   # None = staged deletion
+        else:
+            f = root / n
+            data = f.read_bytes() if f.is_file() else None
+        sha = hashlib.sha256(data).hexdigest() if data is not None else None
+        if sha == files[n]:
+            ok.add(n)
+    return ok
 
 
 # ---------- Gate 2: paid calls ----------
