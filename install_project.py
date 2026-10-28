@@ -19,6 +19,7 @@ switch the gates off by editing them).
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -44,6 +45,10 @@ def main() -> int:
         return 2
     claude = repo / ".claude"
     dest = claude / "dev-harness"
+    try:  # the copy being replaced decides which files its own gate lets this one install touch
+        prev = tuple(int(x) for x in re.search(r"(\d+)\.(\d+)\.(\d+)", (dest / "VERSION").read_text()).groups())
+    except (OSError, AttributeError):
+        prev = None
     if dest.exists():
         shutil.rmtree(dest)
     for sub in ("scripts", "templates"):
@@ -98,6 +103,22 @@ def main() -> int:
         current[event] = (current.get(event) or []) + groups
     settings["hooks"] = {k: v for k, v in current.items() if v}
     settings_path.write_text(json.dumps(settings, indent=2, ensure_ascii=False) + "\n")
+    # Files /dev-harness-init wrote earlier that mention command names (older installs used /dh-… or the plugin's
+    # /dev-harness:…). Only names are renamed; nothing else in them changes.
+    def rename(text: str) -> str:
+        return re.sub(r"(?<![\w-])/dh-(?=[a-z])", "/dev-harness-", rewrite(text))
+    for rel in ((".harness/paid_guard.py", ".harness/check.sh") if prev is None or prev >= (0, 6, 5) else ()):
+        f = repo / rel
+        if f.is_file():
+            old = f.read_text()
+            if rename(old) != old:
+                f.write_text(rename(old))
+    md = repo / "CLAUDE.md"
+    if md.is_file():
+        old = md.read_text()
+        new = re.sub(r"(<!-- dev-harness:start.*?<!-- dev-harness:end -->)", lambda m: rename(m.group(1)), old, flags=re.S)
+        if new != old:
+            md.write_text(new)
     print(f"installed dev-harness {version} into {repo}/.claude — commit it; it is active from the next session.\n"
           "Skills: /dev-harness-init /dev-harness-spec /dev-harness-build /dev-harness-paid-call /dev-harness-experiment /dev-harness-autoloop /dev-harness-retro /dev-harness-ship /dev-harness-status /dev-harness-eval")
     return 0

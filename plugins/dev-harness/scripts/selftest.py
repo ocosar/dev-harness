@@ -40,15 +40,23 @@ def main() -> int:
     locked = H.locked_patterns(cfg)
     bad += [f"path not locked: {p}" for p in cases.get("locked_must_match", []) if not H.matches_any(p, locked)]
     # built-in: the gates themselves still catch the standard escapes with THIS repo's config
-    from gate_pretool import merge_guard, shell_write_targets
-    for c in ("gh pr merge 1 --squash", "git push origin main", "git -c core.x=y push origin HEAD:main",
+    from gate_pretool import merge_guard, merge_mode, merge_request, shell_write_targets
+    # A plain one-PR merge: blocked in "owner" mode; in "ask"/"auto" it must reach the owner's click / autopilot rule.
+    plain = "gh pr merge 1 --squash"
+    if merge_mode(cfg) == "owner":
+        if not merge_guard(root, cfg, plain, str(root)):
+            bad.append(f"merge guard misses: {plain}")
+    elif merge_guard(root, cfg, plain, str(root)) or not merge_request(plain):
+        bad.append(f"merge mode '{merge_mode(cfg)}': a plain one-PR merge doesn't reach the owner's click: {plain}")
+    # Always blocked, in every merge mode.
+    for c in ("gh pr merge 1 --admin", "git push origin main", "git -c core.x=y push origin HEAD:main",
               "git push --force origin +HEAD:refs/heads/master", "git push --all"):
         if not merge_guard(root, cfg, c, str(root)):
             bad.append(f"merge guard misses: {c}")
     for c in ("sed -i 's/false/true/' .harness/features.json", "echo '{}' > .harness/config.json"):
         if not shell_write_targets(root, cfg, c, str(root)):
             bad.append(f"protected-file guard misses: {c}")
-    n = 7 + sum(len(cases.get(k, [])) for k in ("paid_must_match", "paid_must_not_match", "locked_must_match"))
+    n = 8 + sum(len(cases.get(k, [])) for k in ("paid_must_match", "paid_must_not_match", "locked_must_match"))
     if bad:
         print(f"dev-harness selftest: {len(bad)}/{n} gate cases fail\n" + "\n".join(f"- {b}" for b in bad))
         return 1

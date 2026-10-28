@@ -176,7 +176,37 @@ def merge_request(cmd: str) -> str | None:
     return (m.group(1) or m.group(2)) if m else None
 
 
+HEREDOC_RE = re.compile(r"<<-?\s*(['\"]?)(\w+)\1")
+
+
+def strip_data_heredocs(cmd: str) -> str:
+    """Drop heredoc bodies that are only DATA written to a file (`cat > f <<'EOF'`, `tee f <<EOF`), so text that
+    merely mentions a command (a progress note quoting a merge command) is not read as that command. A heredoc
+    piped into anything (`| bash`) or fed to any other program keeps its body — that text may run."""
+    lines, out, i = cmd.split("\n"), [], 0
+    while i < len(lines):
+        line = lines[i]
+        out.append(line)
+        m = HEREDOC_RE.search(line)
+        if m:
+            head = line[:m.start()].strip().split()
+            verb = head[0].rsplit("/", 1)[-1] if head else ""
+            data_only = verb in ("cat", "tee") and "|" not in line
+            j = i + 1
+            while j < len(lines) and lines[j].strip() != m.group(2):
+                if not data_only:
+                    out.append(lines[j])
+                j += 1
+            if j < len(lines):
+                out.append(lines[j])
+            i = j + 1
+            continue
+        i += 1
+    return "\n".join(out)
+
+
 def merge_guard(root: Path, cfg: dict, cmd: str, cwd: str | None) -> str | None:
+    cmd = strip_data_heredocs(cmd)
     protected = [b for b in cfg.get("protected_branches", []) if b]
     where = Path(cwd) if cwd and Path(cwd).is_dir() and H.find_root(cwd) == root else root
     if GH_MERGE_RE.search(cmd):
@@ -300,7 +330,8 @@ def shell_write_targets(root: Path, cfg: dict, cmd: str, cwd: str | None) -> lis
 # ---------- harness self-update: one owner click for the whole install ----------
 INSTALL_RE = re.compile(r"^\s*python[0-9.]*\s+(?:-B\s+)?(\S*install_project\.py)\s+(\S+)\s*$")
 INSTALL_TARGETS = [".claude/settings.json", ".claude/dev-harness/*", ".claude/skills/dev-harness-*",
-                   ".claude/skills/dh-*", ".claude/agents/dev-harness-*", ".claude/agents/dh-*"]
+                   ".claude/skills/dh-*", ".claude/agents/dev-harness-*", ".claude/agents/dh-*",
+                   ".harness/paid_guard.py", ".harness/check.sh"]  # the installer only renames commands in these two
 
 
 def harness_update(root: Path, cmd: str, cwd: str | None) -> str | None:
