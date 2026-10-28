@@ -41,6 +41,12 @@ DEFAULT_CONFIG = {
     # true if merging to the default branch deploys (Railway/Pages from main…): then merge "auto" acts like "ask"
     "deploys_on_merge": False,
     "check": {"command": "bash .harness/check.sh", "timeout_s": 600, "max_consecutive_blocks": 3},
+    # Session start-up step: .harness/init.sh installs/verifies the tools once per fresh machine (run automatically
+    # before the first check of a session; the briefing tells Claude to run it first).
+    "init": {"timeout_s": 900},
+    # End-of-session hygiene: at a stop, uncommitted work (outside harness bookkeeping) gets ONE reminder to commit it
+    # or record in progress.md why it is left; unpushed commits get one reminder to push.
+    "clean_state": True,
     "unattended_env": "HARNESS_UNATTENDED",
     "locked_paths": [],
     "autoloop": {},
@@ -119,11 +125,55 @@ def envelope_spent(root: Path, sha: str) -> float:
     return round(total, 6)
 
 
+INIT_SCRIPT = f"{HARNESS_DIR}/init.sh"
+INIT_STATE = f"{HARNESS_DIR}/state/init.json"
+BOOKKEEPING = [".harness/events/*", ".harness/state/*", ".harness/lessons-inbox/*", ".harness/ledger/*"]
+
+
+def machine_id() -> str:
+    """Changes when the session lands on a fresh machine/container (boot id), so init runs again there."""
+    for p in ("/proc/sys/kernel/random/boot_id",):
+        try:
+            return Path(p).read_text().strip()
+        except OSError:
+            pass
+    import socket
+    return socket.gethostname()
+
+
+def init_needed(root: Path) -> bool:
+    script = root / INIT_SCRIPT
+    if not script.is_file():
+        return False
+    try:
+        st = json.loads((root / INIT_STATE).read_text())
+    except (OSError, ValueError):
+        return True
+    return st.get("machine") != machine_id() or st.get("sha") != hashlib.sha256(script.read_bytes()).hexdigest()
+
+
+def run_init(root: Path, cfg: dict) -> tuple[bool, str]:
+    """Run .harness/init.sh once per machine (and again when the script changes). (ok, output tail)."""
+    script = root / INIT_SCRIPT
+    try:
+        r = subprocess.run(["bash", INIT_SCRIPT], cwd=root, capture_output=True, text=True,
+                           timeout=int((cfg.get("init") or {}).get("timeout_s", 900)))
+        ok, out = r.returncode == 0, r.stdout + "\n" + r.stderr
+    except subprocess.TimeoutExpired:
+        ok, out = False, "init.sh timed out"
+    if ok:
+        write_json(root / INIT_STATE, {"machine": machine_id(), "sha": hashlib.sha256(script.read_bytes()).hexdigest(),
+                                       "at": now_iso(cfg)})
+    log_event(root, "init_ran", ok=ok)
+    return ok, "\n".join(out.strip().splitlines()[-30:])
+
+
 def evals_dir(root: Path) -> Path:
     return root / EVALS_DIR / branch_slug(root)
 
 # Files that steer the harness itself. Changing them needs the owner (Edit/Write → ask; shell → restored).
-CONTROL_FILES = [".harness/config.json", ".harness/check.sh", ".harness/cases.json", ".harness/paid_guard.py",
+CONTROL_FILES = [".harness/config.json", ".harness/check.sh", ".harness/init.sh", ".harness/cases.json",
+                 ".harness/paid_guard.py",
                  # the harness itself when installed into the repo (install_project.py), and the settings that load it
                  ".claude/settings.json", ".claude/dev-harness/*", ".claude/skills/dev-harness-*",
                  ".claude/agents/dev-harness-*",

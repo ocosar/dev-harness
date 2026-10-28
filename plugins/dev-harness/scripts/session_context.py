@@ -44,6 +44,12 @@ def brief(root) -> str:
              f"language '{cfg.get('language', 'en')}'; leave existing docs in their own language. "
              "Report format: what was done · commit hashes · "
              "review paths · USD spent · what you need from the owner."]
+    if H.init_needed(root):
+        lines.append(f"\n**Fresh machine:** run `bash {H.INIT_SCRIPT}` before anything else (installs/verifies tools; "
+                     "takes a moment once per machine).")
+    elif not (root / H.INIT_SCRIPT).is_file():
+        lines.append(f"\nNo `{H.INIT_SCRIPT}` yet: if setup steps (installing test tools) are needed on a fresh machine, "
+                     "propose one to the owner — writing it asks for their click.")
     try:
         feats = json.loads((hd / "features.json").read_text())
         items = feats.get("features", [])

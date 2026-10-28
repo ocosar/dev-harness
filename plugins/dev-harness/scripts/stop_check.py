@@ -79,6 +79,52 @@ def autoloop_keep_going(root: Path, payload: dict, state: dict) -> dict | None:
     return {"decision": "block", "reason": reason}
 
 
+def clean_state(root: Path, cfg: dict, payload: dict) -> dict | None:
+    """Leave the repo resumable: one reminder per stop sequence (never a loop), and never on a protected branch
+    (work there is the gates' business)."""
+    if not cfg.get("clean_state", True) or payload.get("stop_hook_active"):
+        return None
+    branch = H.git(root, "rev-parse", "--abbrev-ref", "HEAD")
+    if not branch or branch == "HEAD" or branch in (cfg.get("protected_branches") or []):
+        return None
+    dirty = []
+    try:  # -z: exact paths, no trimming/quoting surprises
+        raw = subprocess.run(["git", "status", "--porcelain=v1", "-z", "--untracked-files=normal"], cwd=root,
+                             capture_output=True, text=True, timeout=20).stdout
+    except (OSError, subprocess.SubprocessError):
+        raw = ""
+    entries = raw.split("\0")
+    i = 0
+    while i < len(entries):
+        e = entries[i]
+        i += 1
+        if len(e) < 4:
+            continue
+        code, rel = e[:2], e[3:]
+        if code[0] in "RC":
+            i += 1  # rename/copy: the next entry is the old path
+        if not H.matches_any(rel, H.BOOKKEEPING) and not H.matches_any(rel.rstrip("/") + "/x", H.BOOKKEEPING):
+            dirty.append(rel)
+    ahead = 0
+    if H.git(root, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"):
+        try:
+            ahead = int(H.git(root, "rev-list", "--count", "@{u}..HEAD") or 0)
+        except ValueError:
+            ahead = 0
+    if not dirty and not ahead:
+        return None
+    parts = []
+    if dirty:
+        parts.append(f"{len(dirty)} uncommitted file(s) ({', '.join(dirty[:5])}{'…' if len(dirty) > 5 else ''}). "
+                     "Commit finished work (harness log files may ride along in the same commit). If something is "
+                     "deliberately left unfinished, write in .harness/progress.md what is left and why, then commit that")
+    if ahead:
+        parts.append(f"{ahead} commit(s) not pushed — push the branch")
+    H.log_event(root, "clean_state_reminder", dirty=len(dirty), ahead=ahead)
+    return {"decision": "block", "reason": "dev-harness: leave the repo resumable before stopping — " + "; ".join(parts)
+            + ". (One reminder only; if you stop again it is allowed.)"}
+
+
 def main() -> None:
     if H.yield_to_repo_copy():
         return
@@ -108,12 +154,15 @@ def check_root(root: Path, payload: dict) -> dict | None:
     missing = last.endswith(".sh") and not (root / last).is_file()
     has_cases = (root / H.HARNESS_DIR / "cases.json").is_file()
     if not command and not has_cases:
-        return None
+        return clean_state(root, cfg, payload)
     fp = fingerprint(root)
     if state.get("last_pass_fp") == fp or state.get("gave_up_fp") == fp:
-        return None  # already green here, or already reported as failing for exactly this code
+        return clean_state(root, cfg, payload)  # already green here (or already reported failing for this code)
     ok, out, what = True, "", ""
-    if has_cases:  # repo's own gate regression cases (paid patterns etc.)
+    if H.init_needed(root):  # fresh machine: install/verify tools first, so the first check doesn't fail on setup
+        ok, out = H.run_init(root, cfg)
+        what = H.INIT_SCRIPT
+    if ok and has_cases:  # repo's own gate regression cases (paid patterns etc.)
         r = subprocess.run([sys.executable, str(Path(__file__).resolve().parent / "selftest.py")], cwd=root,
                            capture_output=True, text=True, timeout=60)
         ok, out, what = r.returncode == 0, r.stdout + r.stderr, "selftest (.harness/cases.json)"
@@ -130,7 +179,7 @@ def check_root(root: Path, payload: dict) -> dict | None:
     if ok:
         state.update(last_pass_fp=fp, blocks_this_turn=0, gave_up_fp=None, last_result="pass")
         H.write_json(state_path, state)
-        return None
+        return clean_state(root, cfg, payload)
     n = (int(state.get("blocks_this_turn", 0)) if payload.get("stop_hook_active") else 0) + 1
     tail = "\n".join(out.strip().splitlines()[-40:])
     state.update(blocks_this_turn=n, last_result="fail", last_fail_fp=fp)

@@ -131,6 +131,8 @@ def _seg_safe(root: Path, cwd: str | None, seg: str) -> bool:
     for t_ in toks[1:]:
         if t_.startswith("/") and not (t_ == rroot or t_.startswith(rroot + "/") or t_.startswith("/tmp/") or t_ == "/dev/null"):
             return False  # absolute path outside the repo (and not /tmp) → normal prompt
+    if verb in ("bash", "sh") and toks[1:] in ([".harness/check.sh"], [".harness/init.sh"]):
+        return True  # owner-approved control files (changing them asks the owner)
     if verb in ("python", "python3", "node", "nodejs", "ruby", "perl", "bash", "sh", "zsh", "deno", "bun"):
         rest = toks[1:]
         if verb.startswith("python") and rest[:1] == ["-m"] and rest[1:2] in (["pytest"], ["coverage"], ["ruff"], ["mypy"], ["black"]):

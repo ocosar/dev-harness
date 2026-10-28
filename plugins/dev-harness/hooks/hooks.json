@@ -55,7 +55,7 @@
           {
             "type": "command",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/stop_check.py\"",
-            "timeout": 900
+            "timeout": 1800
           }
         ]
       }

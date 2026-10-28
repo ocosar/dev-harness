@@ -26,6 +26,12 @@ def decision(out):
     return None if out is None else out["hookSpecificOutput"]["permissionDecision"]
 
 
+def no_clean_reminder(repo):
+    cfg = json.loads((repo / ".harness" / "config.json").read_text())
+    cfg["clean_state"] = False
+    (repo / ".harness" / "config.json").write_text(json.dumps(cfg))
+
+
 @pytest.fixture
 def repo(tmp_path):
     def g(*a):
@@ -184,6 +190,7 @@ def test_config_edit_needs_click(repo):
 # ---- Stop hook
 def test_stop_blocks_on_failing_check_then_gives_up(repo):
     """Mirrors Claude Code: the stop right after a block arrives with stop_hook_active=true."""
+    no_clean_reminder(repo)
     (repo / ".harness" / "check.sh").write_text("echo boom; exit 1\n")
     (repo / "x.py").write_text("print(1)\n")
     first = {"cwd": str(repo), "hook_event_name": "Stop", "stop_hook_active": False}
@@ -198,6 +205,7 @@ def test_stop_blocks_on_failing_check_then_gives_up(repo):
 
 
 def test_stop_passes_and_caches(repo):
+    no_clean_reminder(repo)
     marker = repo.parent / f"{repo.name}-ran.txt"  # outside the repo, so it doesn't change the fingerprint
     (repo / ".harness" / "check.sh").write_text(f"echo run >> {marker}; exit 0\n")
     stop = {"cwd": str(repo), "hook_event_name": "Stop"}
