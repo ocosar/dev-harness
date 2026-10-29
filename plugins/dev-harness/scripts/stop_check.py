@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shlex
 import subprocess
 import sys
@@ -84,6 +85,8 @@ def clean_state(root: Path, cfg: dict, payload: dict) -> dict | None:
     (work there is the gates' business)."""
     if not cfg.get("clean_state", True) or payload.get("stop_hook_active"):
         return None
+    if os.environ.get("CLAUDE_CODE_REMOTE", "").lower() in ("1", "true", "yes") and cfg.get("clean_state") != "always":
+        return None  # Claude Code cloud sessions already remind about uncommitted/unpushed work at stop — no double nag
     branch = H.git(root, "rev-parse", "--abbrev-ref", "HEAD")
     if not branch or branch == "HEAD" or branch in (cfg.get("protected_branches") or []):
         return None

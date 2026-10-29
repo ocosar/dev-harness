@@ -14,9 +14,11 @@ def g(repo, *a):
     return subprocess.run(["git", *a], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
 
 
-def run(script, payload, cwd):
+def run(script, payload, cwd, env=None):
     e = dict(os.environ)
     e.pop("HARNESS_UNATTENDED", None)
+    e.pop("CLAUDE_CODE_REMOTE", None)
+    e.update(env or {})
     r = subprocess.run([sys.executable, str(SCRIPTS / script)], input=json.dumps(payload), capture_output=True,
                        text=True, env=e, cwd=cwd, timeout=120)
     return json.loads(r.stdout) if r.stdout.strip() else None
@@ -110,3 +112,13 @@ def test_assisted_runs_owner_scripts_without_prompt(repo):
     out = run("gate_pretool.py", {"cwd": str(repo), "tool_name": "Write", "tool_use_id": "t",
                                   "tool_input": {"file_path": str(repo / ".harness/init.sh"), "content": "x"}}, repo)
     assert out["hookSpecificOutput"]["permissionDecision"] == "ask"   # changing init.sh needs the owner
+
+
+def test_cloud_sessions_leave_the_reminder_to_claude_code(repo):
+    run("stop_check.py", {"cwd": str(repo), "hook_event_name": "Stop"}, repo)
+    (repo / "z.py").write_text("1\n")
+    assert run("stop_check.py", {"cwd": str(repo), "hook_event_name": "Stop"}, repo, env={"CLAUDE_CODE_REMOTE": "true"}) is None
+    cfg = json.loads((repo / ".harness/config.json").read_text()); cfg["clean_state"] = "always"
+    (repo / ".harness/config.json").write_text(json.dumps(cfg))
+    out = run("stop_check.py", {"cwd": str(repo), "hook_event_name": "Stop"}, repo, env={"CLAUDE_CODE_REMOTE": "true"})
+    assert out and "z.py" in out["reason"]
