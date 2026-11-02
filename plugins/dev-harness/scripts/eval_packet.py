@@ -106,6 +106,9 @@ def build(root: Path, base: str) -> Path:
     parts.append(QUESTIONS)
     out = H.evals_dir(root) / "packet.md"
     out.parent.mkdir(parents=True, exist_ok=True)
+    gi = root / H.EVALS_DIR / ".gitignore"  # the packet is rebuilt on demand; verdicts and results stay committed
+    if not gi.is_file():
+        gi.write_text("*/packet.md\n")
     out.write_text(redact("\n".join(parts)))
     H.log_event(root, "eval_packet", chars=out.stat().st_size, base=base)
     return out

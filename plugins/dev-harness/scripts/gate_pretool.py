@@ -99,7 +99,35 @@ SAFE_PKG_SUB = {"install", "ci", "test", "add", "sync", "list", "show", "why"}  
 SECRET_TOK = re.compile(r"(?i)\.env\b|/\.(?:ssh|aws|gnupg|netrc)|/\.config/(?:gcloud|gh)|(?:^|/)credentials\b"
                         r"|\$\{?[A-Za-z_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD)|/proc/\d+/environ|id_(?:rsa|ed25519)")
 SECRET_VERB = re.compile(r"(?i)^(?:printenv|env|set|export)$")
+ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 SUBST = re.compile(r"\$\(|`|<\(")
+
+
+def _safe_split(seg: str) -> list:
+    try:
+        toks = shlex.split(seg.strip())
+    except ValueError:
+        toks = seg.split()
+    while toks and ASSIGN.match(toks[0]):
+        toks = toks[1:]
+    return toks
+
+
+def prints_env(toks: list) -> bool:
+    """Would this command print environment variables? `printenv`: always. `env`: only without a command to run
+    (`env FOO=1 pytest` runs pytest). `export`: only bare or `-p`. `set`: only bare. Assigning values
+    (`export NAME=value`) prints nothing; a value that READS a secret is still caught by SECRET_TOK."""
+    verb = toks[0].rsplit("/", 1)[-1] if toks else ""
+    rest = toks[1:]
+    if verb == "printenv":
+        return True
+    if verb == "env":
+        return all(ASSIGN.match(x) or x.startswith("-") for x in rest)
+    if verb == "export":
+        return not rest or rest == ["-p"]
+    if verb == "set":
+        return not rest
+    return False
 
 
 def _seg_safe(root: Path, cwd: str | None, seg: str) -> bool:
@@ -121,7 +149,7 @@ def _seg_safe(root: Path, cwd: str | None, seg: str) -> bool:
     if not toks or toks[0] in ("sudo", "su", "env", "doas"):  # privilege / env-injection front → not auto-allowed
         return False
     verb = toks[0].rsplit("/", 1)[-1]
-    if SECRET_VERB.match(verb):
+    if prints_env(toks):
         return False
     if verb in ("find", "fd") and any(t in ("-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint") for t in toks):
         return False  # find can delete or run commands
@@ -407,16 +435,22 @@ def paid_matches(cfg: dict, text: str) -> int:
 
 
 def is_paid_bash(cfg: dict, cmd: str) -> bool:
-    return paid_matches(cfg, cmd) > 0
+    # same view as the live gate: heredoc text only written to a file is not a call (selftest agrees with evaluate)
+    return paid_matches(cfg, strip_data_heredocs(cmd)) > 0
 
 
 def is_paid_mcp(cfg: dict, tool: str) -> bool:
     return any(re.fullmatch(p, tool) for p in cfg["paid"].get("mcp_tools", []) if p)
 
 
+PY_RUN = re.compile(r"(?:^|[;&|(]\s*|\s)(?:uv\s+run\s+|poetry\s+run\s+)?python[0-9.]*\s+(?:-[A-Za-z]+\s+)*([^\s;&|'\"-][^\s;&|'\"]*\.py)\b")
+
+
 def paid_script(root: Path, cfg: dict, cmd: str, cwd: str | None) -> str | None:
-    """A shell script run by `cmd` that itself contains a paid command (write-a-script-then-run-it)."""
-    for tok in re.findall(r"[^\s;&|'\"]+\.(?:sh|bash|zsh)\b", cmd):
+    """A shell script — or a Python script run by an interpreter — that `cmd` runs and that itself contains a paid
+    command or call matched by the repo's paid patterns (write-a-script-then-run-it)."""
+    toks = re.findall(r"[^\s;&|'\"]+\.(?:sh|bash|zsh)\b", cmd) + PY_RUN.findall(cmd)
+    for tok in toks:
         rel = to_rel(root, cwd, tok)
         f = root / rel if rel else None
         try:
@@ -631,7 +665,7 @@ def evaluate(root: Path, payload: dict) -> list[tuple[str, str, dict]]:
                                              "Approve only if YOU asked for exactly this.")
             out.append((d, r, {"owner_ok": names}))
         if not out and H.autonomy(cfg) != "manual" and (SECRET_TOK.search(cmd) or any(
-                SECRET_VERB.match(w.rsplit("/", 1)[-1]) for w in cmd.split()[:1])):
+                prints_env(_safe_split(seg)) for seg in SEG_SPLIT.split(cmd))):
             d, r = ask_or_deny(cfg, payload, "SECRETS — this command may read or print secret values (.env, environment, "
                                              "key variables). With fewer prompts on, the harness asks you for these "
                                              "explicitly. Approve only if you want this.")

@@ -98,3 +98,42 @@ def test_note_quoting_a_paid_call_is_not_a_paid_call(repo):
     for cmd in ["bash <<'EOF'\ncurl -X POST https://x/api/jobs\nEOF", "python3 pipeline.py --pay",
                 "cat <<'EOF' | sh\npython3 pipeline.py --pay\nEOF"]:
         assert gate(repo, cmd) == "deny", cmd                                   # code that runs still counts
+
+
+# ---- v0.8.4: route-to-drone retro proposals P1–P3 ----
+PAY = r"python[0-9.]*\s+\S*pipeline\.py\b[^;&|]*\s--pay\b"
+
+
+def test_selftest_agrees_with_gate_on_data_heredocs(repo):
+    (repo / ".harness" / "config.json").write_text(json.dumps({"timezone": "UTC", "paid": {"bash_patterns": [PAY]}}))
+    note = "cat >> notes.md <<'EOF'\n- owner runs `python pipeline.py --x --pay`\nEOF"
+    runs = "bash <<'EOF'\npython pipeline.py --x --pay\nEOF"
+    (repo / ".harness" / "cases.json").write_text(json.dumps({"paid_must_not_match": [note], "paid_must_match": [runs]}))
+    r = subprocess.run([sys.executable, str(SCRIPTS / "selftest.py")], cwd=repo, capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout
+
+
+@pytest.mark.parametrize("cmd,asks", [
+    ("export FAL_MOCK=1 FLYOVER_MOCK=1; python -m pytest -q", False),
+    ("FAL_MOCK=1 python -m pytest -q", False),
+    ("set -euo pipefail; python -m pytest -q", False),
+    ("set -o pipefail && ls", False),
+    ("env FAL_MOCK=1 python -m pytest -q", False),
+    ("export", True), ("export -p", True), ("set", True), ("env", True), ("printenv", True),
+    ("env | grep KEY", True), ("ls && printenv", True),
+    ("export K=$MY_API_KEY", True), ("export X=$(cat .env)", True),
+])
+def test_export_assignments_are_not_secret_reads(repo, cmd, asks):
+    (repo / ".harness" / "config.json").write_text(json.dumps({"timezone": "UTC", "autonomy": "assisted"}))
+    assert (gate(repo, cmd) == "ask") is asks, (cmd, gate(repo, cmd))
+
+
+def test_python_script_with_paid_code_is_gated(repo):
+    (repo / ".harness" / "config.json").write_text(json.dumps(
+        {"timezone": "UTC", "paid": {"bash_patterns": [r'run_job\([^)]*mode="pay"'], "daily_cap_usd": 10}}))
+    (repo / "runner.py").write_text('from rtd.pipeline import run_job\nrun_job(route, mode="pay")\n')
+    for cmd in ["python3 runner.py", "python3 -u runner.py --routes all", "cd . && python runner.py", "uv run python runner.py"]:
+        assert gate(repo, cmd) == "deny", cmd                     # no prepared request → blocked
+    (repo / "free.py").write_text("print('ok')\n")
+    assert gate(repo, "python3 free.py") != "deny"
+    assert gate(repo, "python3 -m pytest -q") != "deny"

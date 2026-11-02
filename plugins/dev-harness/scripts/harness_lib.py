@@ -127,7 +127,8 @@ def envelope_spent(root: Path, sha: str) -> float:
 
 INIT_SCRIPT = f"{HARNESS_DIR}/init.sh"
 INIT_STATE = f"{HARNESS_DIR}/state/init.json"
-BOOKKEEPING = [".harness/events/*", ".harness/state/*", ".harness/lessons-inbox/*", ".harness/ledger/*"]
+BOOKKEEPING = [".harness/events/*", ".harness/state/*", ".harness/lessons-inbox/*", ".harness/ledger/*",
+               ".harness/evals/*/packet.md"]
 
 
 def machine_id() -> str:

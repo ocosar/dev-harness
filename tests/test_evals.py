@@ -74,6 +74,7 @@ def test_packet_contains_spec_criteria_diff_questions_and_redacts(repo):
     assert "VERDICT: PASS" in text and "different model family" in text
     assert "sk-abcdefghijklmnop" not in text and "[REDACTED]" in text
     assert Path(r.stdout.strip()) == repo / ".harness" / "evals" / "claude-feat" / "packet.md"
+    assert "packet.md" not in g(repo, "status", "--porcelain")            # rebuilt on demand, not committed
 
 
 @pytest.mark.parametrize("answer,verdict", [
