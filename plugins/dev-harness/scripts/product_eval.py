@@ -54,15 +54,19 @@ def compare(cfg: dict, result: dict, baseline: dict | None) -> dict:
         delta = score - b if direction == "max" else b - score   # positive = better
         verdict.update(baseline=b, delta=round(delta, 6), regression=delta < -tol)
         bm, rm = baseline.get("metrics") or {}, result.get("metrics") or {}
-        worse = []
+        worse, skipped = [], []
         for k in sorted(set(bm) & set(rm)):
             try:
                 d = float(rm[k]) - float(bm[k]) if direction == "max" else float(bm[k]) - float(rm[k])
             except (TypeError, ValueError):
+                skipped.append(k)      # not a number on one side: said out loud, never silently passed
                 continue
             if d < -tol:
                 worse.append({"case": k, "baseline": bm[k], "now": rm[k]})
         verdict["worse_cases"] = worse[:20]
+        # per-case metrics that could NOT be compared — non-numeric, or present on only one side
+        verdict["not_compared"] = {"non_numeric": skipped[:20], "only_in_baseline": sorted(set(bm) - set(rm))[:20],
+                                   "only_now": sorted(set(rm) - set(bm))[:20]}
     verdict["pass"] = verdict["ok"] and not verdict["regression"]
     return verdict
 
@@ -136,6 +140,8 @@ def main() -> int:
     b = "no baseline yet" if baseline is None else f"baseline {verdict['baseline']} → Δ {verdict['delta']:+g}"
     print(f"{'PASS' if verdict['pass'] else 'FAIL'}: score {verdict['score']:g} ({b}); ok={verdict['ok']}"
           + (f"; worse cases: {', '.join(w['case'] for w in verdict.get('worse_cases', []))}" if verdict.get("worse_cases") else "")
+          + "".join(f"\nnot compared ({k.replace('_', ' ')}): {', '.join(v)}"
+                    for k, v in (verdict.get("not_compared") or {}).items() if v)
           + f"\nresult: {path}")
     return 0 if verdict["pass"] else 1
 

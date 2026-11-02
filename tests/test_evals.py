@@ -200,6 +200,17 @@ def test_product_eval_baseline_and_regression(repo):
     assert run(repo, "product_eval.py", "run").returncode == 1
 
 
+def test_product_eval_says_which_metrics_were_not_compared(repo):
+    set_cfg(repo, product={"enabled": True, "cmd": "python3 ev.py", "direction": "max", "tolerance": 0.01})
+    (repo / ".harness" / "evals").mkdir(exist_ok=True)
+    (repo / ".harness" / "evals" / "baseline.json").write_text(json.dumps(
+        {"score": 0.5, "metrics": {"moda": {"median": 0.4}, "kadikoy": 0.5, "old": 0.3}}))
+    write_eval(repo, 0.5, metrics={"moda": {"median": 0.1}, "kadikoy": 0.5, "new": 0.2})
+    r = run(repo, "product_eval.py", "run")
+    assert "not compared (non numeric): moda" in r.stdout
+    assert "only in baseline): old" in r.stdout and "only now): new" in r.stdout
+
+
 def test_product_eval_free_run_strips_secrets(repo):
     cfg = json.loads((repo / ".harness" / "config.json").read_text())
     cfg["paid"] = {"secret_env": ["T_SECRET"]}
