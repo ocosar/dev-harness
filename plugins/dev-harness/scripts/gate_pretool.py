@@ -222,9 +222,14 @@ def strip_data_heredocs(cmd: str) -> str:
         out.append(line)
         m = HEREDOC_RE.search(line)
         if m:
-            head = line[:m.start()].strip().split()
+            # judge the command that OWNS the heredoc: the last segment before `<<` on a chained line
+            # (`cd x && git stash; cat >> notes.md <<'EOF'` → `cat`), not the first word of the line
+            seg = re.split(r"&&|\|\||;|\|", line[:m.start()])[-1]
+            head = seg.strip().split()
             verb = head[0].rsplit("/", 1)[-1] if head else ""
-            data_only = verb in ("cat", "tee") and "|" not in line
+            # data only if that command is cat/tee, it doesn't READ from a pipe into a shell, and nothing after the
+            # marker pipes the body onward (`<<EOF | bash`)
+            data_only = verb in ("cat", "tee") and "|" not in line[m.end():]
             j = i + 1
             while j < len(lines) and lines[j].strip() != m.group(2):
                 if not data_only:

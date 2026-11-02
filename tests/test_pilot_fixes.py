@@ -166,3 +166,21 @@ def test_assisted_runs_harness_scripts_without_prompt(repo):
     assert gate(repo, "python3 .claude/dev-harness/scripts/eval_packet.py build") == "allow"
     assert gate(repo, "python3 .claude/dev-harness/scripts/second_opinion.py --send") != "allow"   # paid → never auto
     assert gate(repo, "python3 tools/other.py") is None
+
+
+# ---- v0.8.6: heredoc owner on a chained line (route-to-drone, after PR #30) ----
+def test_chained_note_heredoc_is_data(repo):
+    setcfg(repo)
+    note = f"cd . && git stash list; cat >> .harness/progress.md <<'EOF'\n- merged with `{M} 30 --squash`\nEOF"
+    assert gate(repo, note) != "deny"
+    for cmd in [f"cd . && cat <<'EOF' | bash\n{M} 30 --squash\nEOF",      # body piped into a shell
+                f"cd . && bash <<'EOF'\n{M} 30 --squash\nEOF",            # heredoc owned by bash
+                f"cat >> n.md <<'EOF'\nx\nEOF\n{M} 30 --squash"]:         # real merge after the note
+        assert gate(repo, cmd) == "deny", cmd
+
+
+def test_chained_note_naming_paid_runner_is_data(repo):
+    (repo / ".harness" / "config.json").write_text(json.dumps(
+        {"timezone": "UTC", "paid": {"bash_patterns": [PAY], "daily_cap_usd": 10}}))
+    note = "git status && cat >> .harness/progress.md <<'EOF'\n- owner may run `python pipeline.py --x --pay`\nEOF"
+    assert gate(repo, note) is None
