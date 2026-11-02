@@ -137,3 +137,23 @@ def test_python_script_with_paid_code_is_gated(repo):
     (repo / "free.py").write_text("print('ok')\n")
     assert gate(repo, "python3 free.py") != "deny"
     assert gate(repo, "python3 -m pytest -q") != "deny"
+
+
+# ---- v0.8.5: two false positives in 0.8.4's script scan (route-to-drone update session) ----
+def test_running_the_harness_selftest_is_not_a_paid_call(repo):
+    subprocess.run([sys.executable, str(REPO / "install_project.py"), str(repo)], check=True, capture_output=True)
+    (repo / ".harness" / "config.json").write_text(json.dumps(
+        {"timezone": "UTC", "paid": {"bash_patterns": [PAY], "daily_cap_usd": 10}}))
+    # selftest.py's own help text quotes `python pipeline.py --from a --to b --pay`
+    assert "--pay" in (repo / ".claude/dev-harness/scripts/selftest.py").read_text()
+    assert gate(repo, "python3 .claude/dev-harness/scripts/selftest.py") != "deny"
+
+
+def test_note_naming_a_paid_runner_is_not_running_it(repo):
+    (repo / ".harness" / "config.json").write_text(json.dumps(
+        {"timezone": "UTC", "paid": {"bash_patterns": [r'run_job\([^)]*mode="pay"'], "daily_cap_usd": 10}}))
+    (repo / "tspay.py").write_text('run_job(r, mode="pay")\n')
+    note = "cat >> .harness/progress.md <<'EOF'\n- don't run `python3 tspay.py` without a request\nEOF"
+    assert gate(repo, note) is None
+    assert gate(repo, "python3 tspay.py") == "deny"                       # actually running it is still gated
+    assert gate(repo, "bash <<'EOF'\npython3 tspay.py\nEOF") == "deny"    # heredoc that runs still counts

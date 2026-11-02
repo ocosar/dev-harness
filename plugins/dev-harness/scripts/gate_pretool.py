@@ -449,10 +449,20 @@ PY_RUN = re.compile(r"(?:^|[;&|(]\s*|\s)(?:uv\s+run\s+|poetry\s+run\s+)?python[0
 def paid_script(root: Path, cfg: dict, cmd: str, cwd: str | None) -> str | None:
     """A shell script — or a Python script run by an interpreter — that `cmd` runs and that itself contains a paid
     command or call matched by the repo's paid patterns (write-a-script-then-run-it)."""
-    toks = re.findall(r"[^\s;&|'\"]+\.(?:sh|bash|zsh)\b", cmd) + PY_RUN.findall(cmd)
+    scan = strip_data_heredocs(cmd)  # a script NAME inside text that is only written to a file is not a run
+    toks = re.findall(r"[^\s;&|'\"]+\.(?:sh|bash|zsh)\b", scan) + PY_RUN.findall(scan)
+    own = Path(__file__).resolve().parent
     for tok in toks:
         rel = to_rel(root, cwd, tok)
         f = root / rel if rel else None
+        try:
+            # The harness's own scripts and the owner-approved control files are not agent-written paid scripts
+            # (their help text may quote example paid commands).
+            if f is not None and (f.resolve().parent == own or "/dev-harness/scripts/" in f.resolve().as_posix()
+                                  or H.matches_any(rel, H.CONTROL_FILES)):
+                continue
+        except OSError:
+            continue
         try:
             if f and f.is_file() and f.stat().st_size < 400_000 and is_paid_bash(cfg, f.read_text(errors="ignore")):
                 return rel
