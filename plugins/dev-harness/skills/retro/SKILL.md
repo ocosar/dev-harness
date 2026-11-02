@@ -22,7 +22,7 @@ Use numbers you counted; write `?` when the data isn't there and say what would 
 
 **4. Repo lessons (PR in this repo)**
 - Curate `.harness/lessons-inbox/*.md` + recurring failures into `.harness/lessons.md`: one line each, `- <area>: <rule> (source: <date / PR / commit>)`, ≤ 30 lines total, merge duplicates, drop lessons that are now enforced in code or obsolete. Delete the curated inbox files after curating.
-- Every false positive or missed paid pattern becomes a case in `.harness/cases.json` (`paid_must_not_match` / `paid_must_match`) plus the config fix that makes `selftest` pass. Config changes prompt the owner — that is expected.
+- Every false positive or missed paid pattern becomes a case in `.harness/cases.json` (`paid_must_not_match` / `paid_must_match`; a merge-guard false positive or miss → `merge_must_not_deny` / `merge_must_deny`) plus the config fix that makes `selftest` pass. Config changes prompt the owner — that is expected.
 
 **5. Harness changes (PR on ocosar/dev-harness)** — only for problems that are not repo-specific: a gate that misfires everywhere, a skill step that keeps getting skipped, a report the owner keeps asking to reformat, a missing check.
 - One PR per change, each with a regression test in `tests/` (or a case file) that fails before and passes after, and a one-paragraph "why" citing the events/corrections.

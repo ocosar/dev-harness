@@ -1,5 +1,7 @@
 {
   "paid_must_match": [],
   "paid_must_not_match": [],
-  "locked_must_match": []
+  "locked_must_match": [],
+  "merge_must_deny": [],
+  "merge_must_not_deny": []
 }

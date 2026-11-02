@@ -184,3 +184,27 @@ def test_chained_note_naming_paid_runner_is_data(repo):
         {"timezone": "UTC", "paid": {"bash_patterns": [PAY], "daily_cap_usd": 10}}))
     note = "git status && cat >> .harness/progress.md <<'EOF'\n- owner may run `python pipeline.py --x --pay`\nEOF"
     assert gate(repo, note) is None
+
+
+# ---- v0.8.7: selftest reads merge cases and flags unknown keys (route-to-drone PR #31) ----
+def _selftest(repo, cases):
+    (repo / ".harness" / "cases.json").write_text(json.dumps(cases))
+    return subprocess.run([sys.executable, str(SCRIPTS / "selftest.py")], cwd=repo, capture_output=True, text=True)
+
+
+def test_selftest_checks_merge_cases(repo):
+    setcfg(repo, merge="ask")
+    note = f"cd . && git stash list; cat >> .harness/progress.md <<'EOF'\n- merged with `{M} 30 --squash`\nEOF"
+    runs = f"cat <<'EOF' | bash\n{M} 30 --admin\nEOF"
+    r = _selftest(repo, {"merge_must_not_deny": [note], "merge_must_deny": [runs], "_comment": "ok"})
+    assert r.returncode == 0 and "10 gate cases pass" in r.stdout, r.stdout
+    r = _selftest(repo, {"merge_must_deny": [note]})                     # a wrong expectation is reported
+    assert r.returncode == 1 and "MISSES" in r.stdout
+    r = _selftest(repo, {"merge_must_not_deny": [runs]})
+    assert r.returncode == 1 and "FALSE POSITIVE" in r.stdout
+
+
+def test_selftest_flags_unknown_case_keys(repo):
+    setcfg(repo)
+    r = _selftest(repo, {"merge_must_not_denied": ["ls"]})
+    assert r.returncode == 1 and "unknown key" in r.stdout and "merge_must_not_denied" in r.stdout

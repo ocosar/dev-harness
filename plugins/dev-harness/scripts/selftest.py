@@ -4,8 +4,12 @@
 {
   "paid_must_match":     ["python pipeline.py --from a --to b --pay"],
   "paid_must_not_match": ["grep -n -- --pay pipeline.py", "python pipeline.py --dry-run"],
-  "locked_must_match":   ["ilan-poc/tools/autoloop_eval.sh"]
+  "locked_must_match":   ["ilan-poc/tools/autoloop_eval.sh"],
+  "merge_must_deny":     ["cat <<'EOF' | bash\ngh pr merge 1 --admin\nEOF"],
+  "merge_must_not_deny": ["cd . && git stash list; cat >> .harness/progress.md <<'EOF'\n- merged with `gh pr merge 30`\nEOF"]
 }
+
+An unknown key fails the selftest, so a misspelled case can't be skipped silently.
 
 Every false positive / false negative the owner reports becomes a case here (the retro skill adds them),
 so a later config change can't silently bring the bug back. Exit 1 lists failing cases.
@@ -20,6 +24,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import harness_lib as H  # noqa: E402
 from gate_pretool import is_paid_bash  # noqa: E402
+
+KEYS = ("paid_must_match", "paid_must_not_match", "locked_must_match", "merge_must_deny", "merge_must_not_deny")
 
 
 def main() -> int:
@@ -41,6 +47,11 @@ def main() -> int:
     bad += [f"path not locked: {p}" for p in cases.get("locked_must_match", []) if not H.matches_any(p, locked)]
     # built-in: the gates themselves still catch the standard escapes with THIS repo's config
     from gate_pretool import merge_guard, merge_mode, merge_request, shell_write_targets
+    bad += [f"merge guard MISSES: {c}" for c in cases.get("merge_must_deny", []) if not merge_guard(root, cfg, c, str(root))]
+    bad += [f"merge guard FALSE POSITIVE (blocks a harmless command): {c}"
+            for c in cases.get("merge_must_not_deny", []) if merge_guard(root, cfg, c, str(root))]
+    unknown = sorted(k for k in set(cases) - set(KEYS) if not k.startswith(("_", "$")))
+    bad += [f"unknown key in cases.json (not checked — misspelled?): {k}; known: {', '.join(KEYS)}" for k in unknown]
     # A plain one-PR merge: blocked in "owner" mode; in "ask"/"auto" it must reach the owner's click / autopilot rule.
     plain = "gh pr merge 1 --squash"
     if merge_mode(cfg) == "owner":
@@ -56,7 +67,7 @@ def main() -> int:
     for c in ("sed -i 's/false/true/' .harness/features.json", "echo '{}' > .harness/config.json"):
         if not shell_write_targets(root, cfg, c, str(root)):
             bad.append(f"protected-file guard misses: {c}")
-    n = 8 + sum(len(cases.get(k, [])) for k in ("paid_must_match", "paid_must_not_match", "locked_must_match"))
+    n = 8 + sum(len(cases.get(k, [])) for k in KEYS)
     if bad:
         print(f"dev-harness selftest: {len(bad)}/{n} gate cases fail\n" + "\n".join(f"- {b}" for b in bad))
         return 1
