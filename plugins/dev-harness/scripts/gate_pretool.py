@@ -165,6 +165,9 @@ def _seg_safe(root: Path, cwd: str | None, seg: str) -> bool:
         rest = toks[1:]
         if verb.startswith("python") and rest[:1] == ["-m"] and rest[1:2] in (["pytest"], ["coverage"], ["ruff"], ["mypy"], ["black"]):
             return True
+        script = next((x for x in rest if not x.startswith("-")), "")
+        if verb.startswith("python") and re.fullmatch(r"(?:\./)?\.claude/dev-harness/scripts/[\w-]+\.py", script):
+            return True  # the harness's own (protected) scripts: selftest, status helpers, eval_packet …
         return False  # bare scripts and -c/-e inline → normal prompt (could do anything, incl. a paid call)
     if verb == "git":
         sub = next((t for t in toks[1:] if not t.startswith("-")), "")

@@ -157,3 +157,12 @@ def test_note_naming_a_paid_runner_is_not_running_it(repo):
     assert gate(repo, note) is None
     assert gate(repo, "python3 tspay.py") == "deny"                       # actually running it is still gated
     assert gate(repo, "bash <<'EOF'\npython3 tspay.py\nEOF") == "deny"    # heredoc that runs still counts
+
+
+def test_assisted_runs_harness_scripts_without_prompt(repo):
+    subprocess.run([sys.executable, str(REPO / "install_project.py"), str(repo)], check=True, capture_output=True)
+    (repo / ".harness" / "config.json").write_text(json.dumps({"timezone": "UTC", "autonomy": "assisted"}))
+    assert gate(repo, "python3 .claude/dev-harness/scripts/selftest.py") == "allow"
+    assert gate(repo, "python3 .claude/dev-harness/scripts/eval_packet.py build") == "allow"
+    assert gate(repo, "python3 .claude/dev-harness/scripts/second_opinion.py --send") != "allow"   # paid → never auto
+    assert gate(repo, "python3 tools/other.py") is None
