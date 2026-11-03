@@ -272,15 +272,37 @@ def _top_segments(cmd: str) -> list[tuple[int, int]]:
     return spans
 
 
+def live_subst(seg: str) -> bool:
+    """Does the shell RUN something inside this text? `$(…)`, an unescaped backtick or `<(…)`/`>(…)` outside single
+    quotes. An escaped backtick (\\`) or anything inside '…' is literal text, not a command."""
+    q, i = None, 0
+    while i < len(seg):
+        c = seg[i]
+        if q == "'":
+            if c == "'":
+                q = None
+        elif c == "\\":
+            i += 2
+            continue
+        elif c == "'" and q is None:
+            q = "'"
+        elif c == '"':
+            q = None if q == '"' else '"'
+        elif c == "`" or seg.startswith("$(", i) or (q is None and seg[i:i + 2] in ("<(", ">(")):
+            return True
+        i += 1
+    return False
+
+
 def strip_data_args(cmd: str) -> str:
     """Drop text that is only DATA to the command it belongs to, so it is not read as a paid call or a merge:
     a search pattern (`grep -n "pipeline.py --pay" …`, `rg`, `git grep`) and a commit message
-    (`git commit -m "… python3 run.py --pay …"`). A segment with command substitution (`$(…)`, backticks) is kept
-    whole — that text runs. Everything else on the line is judged as before."""
+    (`git commit -m "… python3 run.py --pay …"`). A segment with live command substitution (`$(…)`, an unescaped
+    backtick) is kept whole — that text runs; an escaped backtick or single-quoted text is literal. Everything else on the line is judged as before."""
     out, last = [], 0
     for s, e in _top_segments(cmd):
         seg = cmd[s:e]
-        if not seg.strip() or SUBST.search(seg):
+        if not seg.strip() or live_subst(seg):
             continue
         toks = _safe_split(seg)
         verb = toks[0].rsplit("/", 1)[-1] if toks else ""
@@ -724,8 +746,11 @@ def evaluate(root: Path, payload: dict) -> list[tuple[str, str, dict]]:
         scan = scan_text(cmd)  # data-only heredocs, search patterns and commit messages are not calls; scripts are
         n_paid = paid_matches(cfg, scan)  # still caught when RUN (paid_script reads the .sh it runs)
         if n_paid > 1 or ((n_paid or script) and LOOP_RE.search(scan)):
-            return [("deny", "GATE 2 — one approval covers ONE paid call. This command runs several (or a loop). "
-                             "Prepare one request per call and run them one by one.", {})]
+            why = (f"it names {n_paid} paid calls" if n_paid > 1 else
+                   f"it runs a paid call next to a loop word (`{LOOP_RE.search(scan).group(0)[:40]}`)")
+            return [("deny", f"GATE 2 — one approval covers ONE paid call, and {why}. Prepare one request per call and "
+                             "run them one by one. (Text that only quotes a command — a commit message, a grep "
+                             "pattern, a cat/tee note — is not counted unless it contains a live `$(…)` or backtick.)", {})]
         if n_paid or script:
             what = cmd + (f"   [runs {script}, which contains a paid command]" if script else "")
             d, r = paid_gate(root, cfg, payload, what, cmd)

@@ -229,3 +229,21 @@ def test_commit_message_quoting_merge_is_data(repo):
     setcfg(repo, merge="ask")
     assert gate(repo, f'git commit -qm "metrics: merged by {M} 30 --squash"') != "deny"
     assert gate(repo, f'git commit -qm "x" && {M} 30 --admin') == "deny"
+
+
+# ---- v0.8.10: an escaped backtick in a commit message is text (route-to-drone, 0.8.9 live test) ----
+TS = r"python[0-9.]*\s+(?:-\S+\s+)*\S*testset_eval\.py\b[^;&|]*\s--pay\b"
+
+
+def test_escaped_backticks_in_commit_message_are_text(repo):
+    (repo / ".harness" / "config.json").write_text(json.dumps(
+        {"timezone": "UTC", "paid": {"bash_patterns": [TS], "daily_cap_usd": 10}}))
+    msg = ("dev-harness: update to 0.8.9 + product eval out_file\n\n"
+           "evals.product.cmd is now \\`python scripts/testset_eval.py --pay --out .harness/evals/product-out.txt\\`\n"
+           "so a paid pass is requested as the bare command; for each route do one H3 call (no xargs, no watch).")
+    cmd = f'git add .claude .harness docs/testset-eval.md && git commit -q -m "{msg}" && git log --oneline -1'
+    assert gate(repo, cmd) is None, cmd
+    assert gate(repo, "git commit -m 'run `python scripts/testset_eval.py --pay --out o.txt` later'") is None
+    for bad in ['git commit -m "x `python scripts/testset_eval.py --pay --out o.txt`"',      # unescaped: runs
+                'git commit -m "$(python scripts/testset_eval.py --pay --out o.txt)"']:
+        assert gate(repo, bad) == "deny", bad
