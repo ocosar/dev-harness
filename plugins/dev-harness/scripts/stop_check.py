@@ -10,7 +10,8 @@
      and does not nag again until the code changes.
 
 Claude Code sets `stop_hook_active` on every stop that follows a block, so the per-turn counter restarts only
-when it is false (a fresh turn). No .harness/config.json → no-op.
+when it is false (a fresh turn). While a subagent the session launched is still running (subagents.py), the check
+and the clean-state reminder wait for the next stop. No .harness/config.json → no-op.
 """
 from __future__ import annotations
 
@@ -151,6 +152,12 @@ def check_root(root: Path, payload: dict) -> dict | None:
     keep = autoloop_keep_going(root, payload, state)
     if keep:
         return keep
+    from subagents import running
+    if running(root):
+        # A builder/evaluator is still writing: its half-done files would fail the check or trip the clean-state
+        # reminder (noise). Judge the repo at the next stop, after it reports.
+        H.log_event(root, "check_deferred", reason="subagent running", running=running(root))
+        return None
     chk = cfg.get("check") or {}
     command = chk.get("command") or ""
     last = shlex.split(command)[-1] if command.strip() else ""

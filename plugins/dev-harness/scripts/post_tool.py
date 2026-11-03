@@ -45,6 +45,25 @@ def restore(root: Path, rel: str, before: dict | None) -> bool:
         return False
 
 
+def _from_approved_install(root: Path, after: dict, names: list[str]) -> set:
+    try:
+        rec = json.loads((root / H.HARNESS_DIR / "state" / "approved_install.json").read_text())
+        if time.time() - float(rec.get("at", 0)) > 12 * 3600:
+            return set()
+        files = rec.get("files") or {}
+    except (OSError, ValueError, TypeError):
+        return set()
+    out = set()
+    for r in names:
+        if r not in files:
+            continue
+        a = after.get(r)
+        sha = a.get("sha") if isinstance(a, dict) else None
+        if (a is None and files[r] is None) or (sha is not None and sha == files[r]):
+            out.add(r)
+    return out
+
+
 def guard_files(root: Path, payload: dict) -> list[str]:
     tid = payload.get("tool_use_id") or "last"
     pre_path = root / H.HARNESS_DIR / "state" / "pre" / f"{tid}.json"
@@ -76,6 +95,10 @@ def guard_files(root: Path, payload: dict) -> list[str]:
         pass
     ok_pats = [p + "*" if p.endswith("/") else p for p in (pre.get("owner_ok") or [])]  # "dir/" = its subtree
     changed = [r for r in H.snapshot_diff(root, before, after) if not H.matches_any(r, ok_pats)]
+    # A file that now holds exactly what an owner-approved HARNESS UPDATE wrote was changed by that install, which may
+    # have run while this command was in flight — neither revert it nor blame this command for it.
+    installed = _from_approved_install(root, after, changed)
+    changed = [r for r in changed if r not in installed]
     if not changed:
         return []
     cmd = (payload.get("tool_input") or {}).get("command", "")

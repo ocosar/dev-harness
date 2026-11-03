@@ -25,7 +25,7 @@ def test_install_layout_and_settings(tmp_path):
     s = json.loads((c / "settings.json").read_text())
     assert s["permissions"]["allow"] == ["Bash(ls:*)"]
     assert {k: len(v) for k, v in s["hooks"].items()} == {"Stop": 2, "SessionStart": 1, "UserPromptSubmit": 1,
-                                                          "PreToolUse": 1, "PostToolUse": 1}
+                                                          "PreToolUse": 2, "PostToolUse": 1, "SubagentStop": 1}
     cmds = [h["command"] for g in sum(s["hooks"].values(), []) for h in g["hooks"]]
     assert "echo mine" in cmds
     for cmd in cmds:

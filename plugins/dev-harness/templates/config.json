@@ -32,7 +32,7 @@
   "autoloop": {},
   "evals": {
     "second_opinion": {
-      "mode": "manual",
+      "mode": "on_request",
       "required": false,
       "provider": "openai",
       "model": "",

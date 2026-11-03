@@ -797,6 +797,25 @@ def evaluate(root: Path, payload: dict) -> list[tuple[str, str, dict]]:
     return out
 
 
+def _asked_before(root: Path, summary: str, within_min: float = 60) -> str | None:
+    """HH:MM of an identical command asked on this branch in the last hour (a restarted worker re-sends commands)."""
+    import datetime as dt
+    key = str(summary)[:400]
+    now = dt.datetime.now(dt.timezone.utc)
+    for r in reversed(list(H._rows(H.events_path(root)))):
+        if r.get("kind") != "gate_ask" or r.get("input") != key:
+            continue
+        try:
+            ts = dt.datetime.fromisoformat(str(r.get("ts")))
+            ts = ts if ts.tzinfo else ts.replace(tzinfo=dt.timezone.utc)
+        except ValueError:
+            continue
+        if (now - ts).total_seconds() <= within_min * 60:
+            return ts.strftime("%H:%M")
+        return None
+    return None
+
+
 def main() -> None:
     if H.yield_to_repo_copy():
         return
@@ -808,6 +827,7 @@ def main() -> None:
     ti = payload.get("tool_input") or {}
     summary = ti.get("command") or ti.get("file_path") or str(ti)[:200]
     results = []
+    asked_before = next((a for a in (_asked_before(root, summary) for root in roots) if a), None)
     for root in roots:
         for d, r, extra in evaluate(root, payload):
             results.append((root, d, r, extra))
@@ -835,6 +855,9 @@ def main() -> None:
         return
     decision = final[0][1]
     reason = "\n\n".join(x[2] for x in final) if decision == "ask" else final[0][2]
+    if decision == "ask" and asked_before:
+        reason = (f"NOTE: this exact command was already asked at {asked_before} — if you approved it then, check "
+                  "whether it already ran (a restarted session re-sends commands) before approving again.\n\n" + reason)
     H.emit({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": decision,
                                    "permissionDecisionReason": reason}})
 

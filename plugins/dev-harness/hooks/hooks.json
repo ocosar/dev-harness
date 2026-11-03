@@ -1,5 +1,5 @@
 {
-  "description": "dev-harness: briefing (SessionStart), owner-lesson capture (UserPromptSubmit), spec/paid/merge/locked-file gates (PreToolUse), paid-call booking (PostToolUse), autoloop keep-going + test/selftest gate (Stop). All hooks are no-ops in repos without .harness/config.json.",
+  "description": "dev-harness: briefing (SessionStart), owner-lesson capture (UserPromptSubmit), spec/paid/merge/locked-file gates (PreToolUse), paid-call booking (PostToolUse), autoloop keep-going + test/selftest gate (Stop; waits while a subagent is still working \u2014 counted on Agent/Task launch and SubagentStop). All hooks are no-ops in repos without .harness/config.json.",
   "hooks": {
     "SessionStart": [
       {
@@ -35,6 +35,16 @@
             "onFailure": "block"
           }
         ]
+      },
+      {
+        "matcher": "Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/subagents.py\"",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -56,6 +66,17 @@
             "type": "command",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/stop_check.py\"",
             "timeout": 1800
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/subagents.py\"",
+            "timeout": 10
           }
         ]
       }

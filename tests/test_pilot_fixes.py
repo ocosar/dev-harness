@@ -247,3 +247,63 @@ def test_escaped_backticks_in_commit_message_are_text(repo):
     for bad in ['git commit -m "x `python scripts/testset_eval.py --pay --out o.txt`"',      # unescaped: runs
                 'git commit -m "$(python scripts/testset_eval.py --pay --out o.txt)"']:
         assert gate(repo, bad) == "deny", bad
+
+
+# ---- v0.8.11: route-to-drone retro 2026-11-03 (P1, P2) + checks wait for a running subagent ----
+def _hook(script, payload, env=None):
+    e = dict(os.environ, **(env or {}))
+    e.pop("HARNESS_UNATTENDED", None)
+    return subprocess.run([sys.executable, str(SCRIPTS / script)], capture_output=True, text=True, env=e,
+                          input=json.dumps(payload))
+
+
+def test_stop_check_waits_while_a_subagent_runs(repo):
+    setcfg(repo, check={"command": "exit 1"})
+    (repo / "wip.py").write_text("half written")
+    base = {"cwd": str(repo)}
+    _hook("subagents.py", {**base, "hook_event_name": "PreToolUse", "tool_name": "Agent", "tool_use_id": "a1",
+                           "tool_input": {"description": "builder F1"}})
+    r = _hook("stop_check.py", {**base, "hook_event_name": "Stop"}, {"CLAUDE_CODE_REMOTE": ""})
+    assert '"block"' not in r.stdout, r.stdout                       # builder still writing → no verdict yet
+    _hook("subagents.py", {**base, "hook_event_name": "SubagentStop"})
+    r = _hook("stop_check.py", {**base, "hook_event_name": "Stop"}, {"CLAUDE_CODE_REMOTE": ""})
+    assert '"block"' in r.stdout and "check failed" in r.stdout       # after it reports: judged as usual
+
+
+def test_stale_subagent_entry_expires(repo):
+    setcfg(repo, check={"command": "exit 1"})
+    (repo / ".harness" / "state").mkdir(parents=True, exist_ok=True)
+    (repo / ".harness" / "state" / "subagents.json").write_text(json.dumps({"running": [{"at": 1}]}))
+    r = _hook("stop_check.py", {"cwd": str(repo), "hook_event_name": "Stop"}, {"CLAUDE_CODE_REMOTE": ""})
+    assert '"block"' in r.stdout
+
+
+def test_repeated_ask_says_when_it_was_asked(repo):
+    setcfg(repo, merge="ask")
+    cmd = "gh api -X PUT repos/o/r/pulls/33/merge -f merge_method=squash"
+    def reason(c):
+        r = _hook("gate_pretool.py", {"cwd": str(repo), "tool_name": "Bash", "tool_use_id": "t", "tool_input": {"command": c}})
+        return json.loads(r.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+    assert "already asked" not in reason(cmd)
+    assert "already asked at" in reason(cmd)
+    assert "already asked" not in reason(cmd.replace("/33/", "/34/"))
+
+
+def test_change_from_approved_install_is_not_blamed_on_a_concurrent_command(repo):
+    setcfg(repo)
+    v = repo / ".claude" / "dev-harness" / "VERSION"
+    v.parent.mkdir(parents=True)
+    v.write_text("old\n")
+    g(repo, "add", "-A"); g(repo, "commit", "-qm", "h")
+    pre = {"cwd": str(repo), "tool_name": "Bash", "tool_use_id": "c1", "tool_input": {"command": "bash .harness/check.sh"}}
+    _hook("gate_pretool.py", pre)                     # snapshot taken while VERSION is "old"
+    v.write_text("new\n")                             # …the approved install writes it meanwhile
+    import hashlib
+    sha = H_sha = hashlib.sha256(b"new\n").hexdigest()
+    (repo / ".harness" / "state").mkdir(parents=True, exist_ok=True)
+    (repo / ".harness" / "state" / "approved_install.json").write_text(json.dumps(
+        {"at": __import__("time").time(), "files": {".claude/dev-harness/VERSION": sha}}))
+    _hook("post_tool.py", {**pre, "tool_response": {}})
+    assert v.read_text() == "new\n"
+    ev = (repo / ".harness" / "events").glob("*.jsonl")
+    assert not any("protected_changed_by_git" in f.read_text() for f in ev)

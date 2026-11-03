@@ -55,7 +55,7 @@ DEFAULT_CONFIG = {
     # 3) product evals: a fixed eval set + score vs. a baseline, with a pluggable judge model.
     "evals": {
         "second_opinion": {
-            "mode": "manual",          # "manual" | "api" | "off"
+            "mode": "on_request",      # "on_request" | "manual" (packet at every ship) | "api" | "off"
             "required": False,         # true → a FAIL verdict stops /dev-harness:ship
             "provider": "openai",      # api mode: openai | gemini | openrouter | anthropic
             "model": "",

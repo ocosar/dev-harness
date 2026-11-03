@@ -7,7 +7,7 @@ description: Gate 3 handover. Final checks on the branch, open or update the PR 
 2. Run the repo's slower pre-merge checks named in CLAUDE.md (e.g. tests inside the production Docker image). Paste the result summary into the PR.
 2b. **Evals** (/dev-harness:eval, per `.harness/config.json → evals`):
    - Product evals, if enabled: run them (free ones always; paid ones only if the owner asked for them in this ship, through /dev-harness:paid-call). A regression stops here.
-   - Second opinion: `"manual"` (default) → build the packet and give the owner the path with the one-line paste instruction; don't wait for it unless `required: true`. `"api"` → dry run, then one paid request. `"off"` → skip.
+   - Second opinion: `"on_request"` (default) → don't build anything; one line in the report: "second opinion on request: /dev-harness-eval packet". Build it only if the owner asks. `"manual"` → build the packet at every ship and give the owner the path with the one-line paste instruction; don't wait for it unless `required: true`. `"api"` → dry run, then one paid request. `"off"` → skip.
    - With `required: true`, a FAIL verdict (or no verdict yet) stops the ship until it is resolved.
 3. `git fetch origin` and rebase/merge the base branch into the feature branch if needed; re-run checks after.
 4. Open/update the PR. Body (configured language, default English), short:
@@ -22,4 +22,5 @@ description: Gate 3 handover. Final checks on the branch, open or update the PR 
    - `"owner"` (default): stop. The owner merges on GitHub.
    - `"auto"` (only with `autonomy: "autopilot"` and `deploys_on_merge: false`): when every check, the reviewer and the evals are green and no second opinion says FAIL, merge it yourself with `gh pr merge <N> --squash` alone, and say so in the report. If anything is not green, stop as in `"owner"`.
    - `"ask"`: after the PR is open and every check above is green, ask the owner in chat "Merge PR #N now?". Only after a yes, run exactly one merge command on its own: in Claude Code cloud sessions `gh pr merge` fails (GraphQL is blocked there), so use `gh api -X PUT repos/<owner>/<repo>/pulls/<N>/merge -f merge_method=squash`; elsewhere `gh pr merge <N> --squash` works too. The hook shows the owner a prompt — that click is Gate 3. One PR per click; never `--admin`/`--auto`; never in an unattended session. If the click is declined, stop.
-7. Otherwise: never merge, never push to main. Report in the harness format with the PR link. If deploy happens on merge (e.g. Railway from main), say so explicitly in the PR so the owner knows the merge click is also the deploy click.
+7. After a merge, the PR's branch is finished: anything committed later (a metrics note, a follow-up) goes on a NEW branch from the freshly fetched `origin/main` and rides along with the next PR. Never force-push a merged branch, even if it is the session's assigned branch.
+8. Otherwise: never merge, never push to main. Report in the harness format with the PR link. If deploy happens on merge (e.g. Railway from main), say so explicitly in the PR so the owner knows the merge click is also the deploy click.

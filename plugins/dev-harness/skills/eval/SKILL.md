@@ -6,7 +6,9 @@ argument-hint: "[packet | record <model> | api | product | baseline]"
 
 Scripts: `${CLAUDE_PLUGIN_ROOT}/scripts/` (`eval_packet.py`, `second_opinion.py`, `product_eval.py`, `llm_client.py`). Settings live in `.harness/config.json → evals` (owner-approved; changing them prompts the owner).
 
-## 1. Second opinion — manual (default, `evals.second_opinion.mode = "manual"`)
+## 1. Second opinion — on request (default, `evals.second_opinion.mode = "on_request"`) or at every ship (`"manual"`)
+
+With `"on_request"`, ship only mentions that a packet can be built; build it when the owner asks (`/dev-harness-eval packet`). The steps below are the same either way.
 1. `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/eval_packet.py" build` → `.harness/evals/<branch>/packet.md` (spec, acceptance criteria, evidence, diff, last check, fixed reviewer questions; secret-looking values redacted).
 2. Tell the owner the path and, in one line, what to do: "Open it, copy everything, paste it into ChatGPT / Gemini / any model, and paste the answer back here." If the packet is very long, say which model handles long input (Gemini, or a long-context GPT).
 3. When the owner pastes an answer back (any time, also in a later session): save it to a temp file and run `eval_packet.py record --model "<model name the owner used>" --file <tmp>`. It stores the verdict (PASS / CONCERNS / FAIL / UNPARSED).
