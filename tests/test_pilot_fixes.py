@@ -208,3 +208,24 @@ def test_selftest_flags_unknown_case_keys(repo):
     setcfg(repo)
     r = _selftest(repo, {"merge_must_not_denied": ["ls"]})
     assert r.returncode == 1 and "unknown key" in r.stdout and "merge_must_not_denied" in r.stdout
+
+
+# ---- v0.8.9: search patterns and commit messages are data (route-to-drone PR #32) ----
+def test_commit_message_and_grep_naming_paid_runner_are_data(repo):
+    (repo / ".harness" / "config.json").write_text(json.dumps(
+        {"timezone": "UTC", "paid": {"bash_patterns": [PAY], "daily_cap_usd": 10}}))
+    for cmd in ['git commit -qm "docs: owner runs python pipeline.py --x --pay on demand" && git push -u origin HEAD',
+                "grep -n 'python pipeline.py --x --pay' docs/*.md",
+                'rg -- "pipeline.py --x --pay" . | head -5',
+                "git grep -n 'pipeline.py --x --pay'"]:
+        assert gate(repo, cmd) is None, cmd
+    for cmd in ['grep -n x f; python pipeline.py --x --pay',            # a real run after the search
+                'git commit -m "$(python pipeline.py --x --pay)"',       # substitution runs
+                'python pipeline.py --x --pay']:
+        assert gate(repo, cmd) == "deny", cmd
+
+
+def test_commit_message_quoting_merge_is_data(repo):
+    setcfg(repo, merge="ask")
+    assert gate(repo, f'git commit -qm "metrics: merged by {M} 30 --squash"') != "deny"
+    assert gate(repo, f'git commit -qm "x" && {M} 30 --admin') == "deny"

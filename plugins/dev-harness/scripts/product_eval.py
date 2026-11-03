@@ -111,9 +111,14 @@ def main() -> int:
         return 0
     if a.cmd == "run":
         if pe.get("paid") or any(__import__("re").search(p, pe["cmd"]) for p in H.paid_patterns(cfg)):
-            print("this eval spends money (evals.product.paid or a paid pattern). Run it through the paid gate: "
-                  f"prepare ONE request for exactly `{pe['cmd']} > {H.EVALS_DIR}/<branch>/product-out.txt`, run it, "
-                  "then `product_eval.py compare --from <that file>`.")
+            out = pe.get("out_file")
+            how = (f"prepare ONE request for exactly `{pe['cmd']}` (it writes its own output to `{out}`), run it, "
+                   f"then `product_eval.py compare --from {out}`." if out else
+                   f"prepare ONE request for exactly `{pe['cmd']} > {H.EVALS_DIR}/<branch>/product-out.txt`, run it, "
+                   "then `product_eval.py compare --from <that file>`. If the runner checks its own arguments with "
+                   ".harness/paid_guard.py, a `> file` redirect makes them differ and the guard refuses: give the runner "
+                   "an output option instead (e.g. `--out FILE` inside evals.product.cmd) and set evals.product.out_file.")
+            print("this eval spends money (evals.product.paid or a paid pattern). Run it through the paid gate: " + how)
             return 2
         env = dict(os.environ, HARNESS_JUDGE_PROVIDER=(pe.get("judge") or {}).get("provider", ""),
                    HARNESS_JUDGE_MODEL=(pe.get("judge") or {}).get("model", ""), PYTHONDONTWRITEBYTECODE="1")

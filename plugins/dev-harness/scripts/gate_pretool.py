@@ -243,8 +243,64 @@ def strip_data_heredocs(cmd: str) -> str:
     return "\n".join(out)
 
 
+SEARCH_VERBS = {"grep", "egrep", "fgrep", "rg", "ag", "ack"}
+
+
+def _top_segments(cmd: str) -> list[tuple[int, int]]:
+    """(start, end) of each top-level command segment: split on ; && || | & and newlines OUTSIDE quotes."""
+    spans, start, i, q = [], 0, 0, None
+    while i < len(cmd):
+        c = cmd[i]
+        if q:
+            if c == "\\" and q == '"':
+                i += 2
+                continue
+            if c == q:
+                q = None
+        elif c == "\\":
+            i += 2
+            continue
+        elif c in "'\"":
+            q = c
+        elif c in ";|&\n":
+            spans.append((start, i))
+            i += 2 if cmd[i:i + 2] in ("&&", "||") else 1
+            start = i
+            continue
+        i += 1
+    spans.append((start, len(cmd)))
+    return spans
+
+
+def strip_data_args(cmd: str) -> str:
+    """Drop text that is only DATA to the command it belongs to, so it is not read as a paid call or a merge:
+    a search pattern (`grep -n "pipeline.py --pay" …`, `rg`, `git grep`) and a commit message
+    (`git commit -m "… python3 run.py --pay …"`). A segment with command substitution (`$(…)`, backticks) is kept
+    whole — that text runs. Everything else on the line is judged as before."""
+    out, last = [], 0
+    for s, e in _top_segments(cmd):
+        seg = cmd[s:e]
+        if not seg.strip() or SUBST.search(seg):
+            continue
+        toks = _safe_split(seg)
+        verb = toks[0].rsplit("/", 1)[-1] if toks else ""
+        sub = next((x for x in toks[1:] if not x.startswith("-")), "") if verb == "git" else ""
+        if verb in SEARCH_VERBS or (verb == "git" and sub in ("grep", "commit")):
+            out.append(cmd[last:s])
+            out.append(f" {verb} {sub} ".replace("  ", " "))
+            last = e
+    out.append(cmd[last:])
+    return "".join(out)
+
+
+def scan_text(cmd: str) -> str:
+    """What the paid and merge checks read: the command without data-only heredocs, search patterns and commit
+    messages."""
+    return strip_data_args(strip_data_heredocs(cmd))
+
+
 def merge_guard(root: Path, cfg: dict, cmd: str, cwd: str | None) -> str | None:
-    cmd = strip_data_heredocs(cmd)
+    cmd = scan_text(cmd)
     protected = [b for b in cfg.get("protected_branches", []) if b]
     where = Path(cwd) if cwd and Path(cwd).is_dir() and H.find_root(cwd) == root else root
     if GH_MERGE_RE.search(cmd):
@@ -444,7 +500,7 @@ def paid_matches(cfg: dict, text: str) -> int:
 
 def is_paid_bash(cfg: dict, cmd: str) -> bool:
     # same view as the live gate: heredoc text only written to a file is not a call (selftest agrees with evaluate)
-    return paid_matches(cfg, strip_data_heredocs(cmd)) > 0
+    return paid_matches(cfg, scan_text(cmd)) > 0
 
 
 def is_paid_mcp(cfg: dict, tool: str) -> bool:
@@ -457,7 +513,7 @@ PY_RUN = re.compile(r"(?:^|[;&|(]\s*|\s)(?:uv\s+run\s+|poetry\s+run\s+)?python[0
 def paid_script(root: Path, cfg: dict, cmd: str, cwd: str | None) -> str | None:
     """A shell script — or a Python script run by an interpreter — that `cmd` runs and that itself contains a paid
     command or call matched by the repo's paid patterns (write-a-script-then-run-it)."""
-    scan = strip_data_heredocs(cmd)  # a script NAME inside text that is only written to a file is not a run
+    scan = scan_text(cmd)  # a script NAME inside text that is only written to a file is not a run
     toks = re.findall(r"[^\s;&|'\"]+\.(?:sh|bash|zsh)\b", scan) + PY_RUN.findall(scan)
     own = Path(__file__).resolve().parent
     for tok in toks:
@@ -665,7 +721,7 @@ def evaluate(root: Path, payload: dict) -> list[tuple[str, str, dict]]:
                                              "you asked for this update and trust the installer's source.")
             return [(d, r, {"owner_ok": list(INSTALL_TARGETS)})]
         script = paid_script(root, cfg, cmd, cwd)
-        scan = strip_data_heredocs(cmd)  # text only written to a file (cat/tee heredoc) is not a call; scripts are
+        scan = scan_text(cmd)  # data-only heredocs, search patterns and commit messages are not calls; scripts are
         n_paid = paid_matches(cfg, scan)  # still caught when RUN (paid_script reads the .sh it runs)
         if n_paid > 1 or ((n_paid or script) and LOOP_RE.search(scan)):
             return [("deny", "GATE 2 — one approval covers ONE paid call. This command runs several (or a loop). "
